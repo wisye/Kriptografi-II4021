@@ -214,5 +214,75 @@ def no3(filename: str):
                 f.write("\n")
                 for trigram, count, in trigram_counts.most_common(100):
                         f.write(f"{trigram} : {count}\n")
-        
-no3("no3.txt")
+
+import numpy as np
+from sympy import Matrix
+
+def mod_inverse_matrix(matrix, mod):
+    matrix = Matrix(matrix)  
+    det = int(matrix.det())  
+    
+    # Compute modular inverse of determinant
+    det_inv = pow(det, -1, mod)  
+    if det_inv is None:
+        raise ValueError("Matrix is not invertible under mod {}".format(mod))
+    
+    # Compute adjugate (cofactor matrix transpose)
+    adjugate = matrix.adjugate()  
+
+    # Compute modular inverse matrix
+    inverse_matrix = (det_inv * adjugate) % mod  
+    
+    return np.array(inverse_matrix.tolist(), dtype=int)
+
+def mod_matrix_multiply(A, B, mod):
+    A = np.array(A)
+    B = np.array(B)
+    result = np.dot(A, B) % mod  
+    return result
+
+def text_to_matrix(text, n):
+    text_numbers = [(ord(char) - ord('A')) for char in text.upper() if char.isalpha()]
+    while len(text_numbers) % n != 0:
+        text_numbers.append(0)  # Padding with 'A' (0) if needed
+    
+    return [text_numbers[i:i+n] for i in range(0, len(text_numbers), n)]
+
+def matrix_to_text(matrix):
+    text = "".join(chr((num % 26) + ord('A')) for row in matrix for num in row)
+    return text
+
+
+def hill_cipher_decrypt(key, ciphertext, mod, n):
+    key_inv = mod_inverse_matrix(key, mod)
+    ciphertext_matrices = text_to_matrix(ciphertext, n)
+    
+    print("Decrypted Matrices:")
+    decrypted_text = ""
+    for matrix in ciphertext_matrices:
+        decrypted_matrix = mod_matrix_multiply(key_inv, matrix, mod)
+        print(np.array(decrypted_matrix))
+        decrypted_text += matrix_to_text([decrypted_matrix])
+    
+    return decrypted_text
+
+def no4(filename: str):
+    with open(filename, 'r') as file:
+        ciphertext = file.read().strip()
+
+    key = np.array([
+        [6, 24, 1],
+        [13, 16, 10],
+        [20, 17, 15],
+    ])
+    mod = 26
+    n = 3
+
+    try:
+        plaintext = hill_cipher_decrypt(key, ciphertext, mod, n)
+        with open("no4ans.txt", 'w') as f:
+            f.write(plaintext)
+    except ValueError as e:
+        print(e)
+                
+no4("no4.txt")
