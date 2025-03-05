@@ -2,7 +2,7 @@ from collections import Counter
 import string
 from math import gcd
 from functools import reduce
-import pycipher
+import re
 
 def read_file(filename: str):
         with open(filename, 'r') as f:
@@ -141,11 +141,8 @@ def write_kaisiski_examination(filename: str):
 def insert_newlines(text: str, interval: int):
         return '\n'.join(text[i:i+interval] for i in range(0, len(text), interval))
 
-def no2(filename: str):
-        ciphertext = read_file(filename)
-        write_kaisiski_examination("no2analysis.txt")
-        
-        separated = insert_newlines(ciphertext, 12).split('\n')
+def write_no2(text: str):
+        separated = insert_newlines(text, 12).split('\n')
         with open("no2ans.txt", 'w') as f:
                 for text in separated:
                         bigram_counts = count_ngrams(text, 2)
@@ -159,7 +156,63 @@ def no2(filename: str):
                         f.write("\nTop 5 Trigrams:\n")
                         for trigram, count in trigram_counts.most_common(5):
                                 f.write(f"{trigram}: {count}\n")
-                        
-        
 
-no2("no2.txt")
+def segment_text(text: str, key_length: int):
+        segments = ['' for _ in range(key_length)]
+        for i, char in enumerate(text):
+                segments[i % key_length] += char
+        return segments
+
+def frequency_analysis(segment):
+        frequencies = Counter(segment)
+        most_common = frequencies.most_common(1)
+        most_common_char = most_common[0][0]
+        return most_common_char
+
+def decrypt_vigenere(ciphertext, key):
+        decrypted_text = []
+        key_length = len(key)
+        for i, char in enumerate(ciphertext):
+                if char in string.ascii_uppercase:
+                        shift = ord(key[i % key_length]) - ord('A')
+                        decrypted_char = chr((ord(char) - shift - ord('A')) % 26 + ord('A'))
+                        decrypted_text.append(decrypted_char)
+                else:
+                        decrypted_text.append(char)
+        return ''.join(decrypted_text)
+
+def no2(filename: str):
+        ciphertext = read_file(filename)
+        write_kaisiski_examination("no2analysis.txt")
+        segments = segment_text(ciphertext, 12)
+
+        
+        key = ''
+        for i, segment in enumerate(segments):
+                most_common_char = frequency_analysis(segment)
+                if most_common_char:
+                        shift = (ord(most_common_char) - ord('E')) % 26
+                        key += chr((ord('A') + shift))
+                else:
+                        key += 'A'
+                print(f"Segment {i}: {segment}")
+                print(f"Most common char: {most_common_char}")
+                print(f"Shift: {shift}")
+    
+        print(f"Derived key: {key}")
+
+
+
+def no3(filename: str):
+        ciphertext = read_file(filename)
+        bigram_counts = count_ngrams(ciphertext, 2)
+        trigram_counts = count_ngrams(ciphertext, 3)
+        
+        with open("no3analysis.txt", "w") as f:
+                for bigram, count, in bigram_counts.most_common(100):
+                        f.write(f"{bigram} : {count}\n")
+                f.write("\n")
+                for trigram, count, in trigram_counts.most_common(100):
+                        f.write(f"{trigram} : {count}\n")
+        
+no3("no3.txt")
