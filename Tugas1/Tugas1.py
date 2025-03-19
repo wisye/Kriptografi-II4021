@@ -108,6 +108,25 @@ def possible_key_lengths(distances):
                         gcd_counts[gcd(distances[i], distances[j])] += 1
         return gcd_counts.most_common()
 
+def split_into_block(ciphertext, key_length):
+    blocks = [ciphertext[i:i + key_length] for i in range(0, len(ciphertext), key_length)]
+    return blocks
+
+def vig_frequency_analysis(text):
+    # Count letter frequencies
+    freq = {}
+    total_letters = 0
+    for char in text.upper():
+        if char.isalpha():
+            freq[char] = freq.get(char, 0) + 1
+            total_letters += 1
+    
+    # Convert to percentages
+    for char in freq:
+        freq[char] = (freq[char] / total_letters) * 100
+    
+    return freq
+
 def write_kaisiski_examination(filename: str):
         ciphertext = read_file("no2.txt")
         repeated_sequences, distances = kasiski_examination(ciphertext)
@@ -126,9 +145,17 @@ def write_kaisiski_examination(filename: str):
                 for trigram, count in trigram_counts.most_common(50):
                         f.write(f"{trigram}: {count}\n")
                 
+                exact_seq = ""
                 f.write("\nRepeated Sequences and their Positions:\n")
                 for seq, positions in repeated_sequences.items():
                         f.write(f"{seq}: {positions}\n")
+                        # Repeated Sequences with distance = 12
+                        if len(positions) > 1 and positions[1] - positions[0] == 12:
+                                exact_seq += seq + " "
+
+                f.write("\nRepeated Sequences with Distance = 12:\n")
+                f.write(f"{exact_seq}\n")
+
                 
                 f.write("\nDistances between Repeated Sequences:\n")
                 f.write(f"{distances}\n")
@@ -138,68 +165,51 @@ def write_kaisiski_examination(filename: str):
                 for length, count in gcd_counts:
                         f.write(f"Length: {length}, Count: {count}\n")
 
-def insert_newlines(text: str, interval: int):
-        return '\n'.join(text[i:i+interval] for i in range(0, len(text), interval))
 
-def write_no2(text: str):
-        separated = insert_newlines(text, 12).split('\n')
-        with open("no2ans.txt", 'w') as f:
-                for text in separated:
-                        bigram_counts = count_ngrams(text, 2)
-                        trigram_counts = count_ngrams(text, 3)
-                        
-                        f.write(f"\nText: {text}\n")
-                        f.write("\nTop 5 Bigrams:\n")
-                        for bigram, count in bigram_counts.most_common(5):
-                                f.write(f"{bigram}: {count}\n")
-                        
-                        f.write("\nTop 5 Trigrams:\n")
-                        for trigram, count in trigram_counts.most_common(5):
-                                f.write(f"{trigram}: {count}\n")
+def write_frequency_analysis(filename: str, ciphertext: str, key_length: int):
+        with open(filename, 'w') as f:
+                # Split the ciphertext into columns
+                blocks = split_into_block(ciphertext.upper(), key_length)
+                f.write("Split the ciphertext into blocks of key_length length:\n")
+                for block in blocks:
+                        formatted_block = ' '.join(block)
+                        f.write(f"{formatted_block}\n")
+        
+                # Most popular letter per position in blocks
+                f.write("\nMost popular letter per position in blocks:\n")
+                for i in range(key_length):
+                        column = ''.join(block[i] for block in blocks if i < len(block))
+                        freq = vig_frequency_analysis(column)
+                        most_popular_letter = max(freq, key=freq.get)
+                        f.write(f"Position {i + 1}: {most_popular_letter} ({freq[most_popular_letter]:.2f}%)\n")
 
-def segment_text(text: str, key_length: int):
-        segments = ['' for _ in range(key_length)]
-        for i, char in enumerate(text):
-                segments[i % key_length] += char
-        return segments
-
-def frequency_analysis(segment):
-        frequencies = Counter(segment)
-        most_common = frequencies.most_common(1)
-        most_common_char = most_common[0][0]
-        return most_common_char
-
-def decrypt_vigenere(ciphertext, key):
+def decrypt_vigenere(ciphertext: str, key: list):
         decrypted_text = []
         key_length = len(key)
         for i, char in enumerate(ciphertext):
                 if char in string.ascii_uppercase:
-                        shift = ord(key[i % key_length]) - ord('A')
-                        decrypted_char = chr((ord(char) - shift - ord('A')) % 26 + ord('A'))
-                        decrypted_text.append(decrypted_char)
+                        if key[i % key_length] == '':
+                                decrypted_text.append(char.upper())
+                        else:
+                                shift = ord(key[i % key_length]) - ord('a')
+                                decrypted_char = chr((ord(char) - shift - ord('a')) % 26 + ord('a'))
+                                decrypted_text.append(decrypted_char)
                 else:
                         decrypted_text.append(char)
         return ''.join(decrypted_text)
 
+def wrap_text(text: str, n: int):
+        return '\n'.join(text[i:i+n] for i in range(0, len(text), n))
+
 def no2(filename: str):
         ciphertext = read_file(filename)
         write_kaisiski_examination("no2analysis.txt")
-        segments = segment_text(ciphertext, 12)
+        write_frequency_analysis("no2analysis2.txt", ciphertext, 12)
 
-        
-        key = ''
-        for i, segment in enumerate(segments):
-                most_common_char = frequency_analysis(segment)
-                if most_common_char:
-                        shift = (ord(most_common_char) - ord('E')) % 26
-                        key += chr((ord('A') + shift))
-                else:
-                        key += 'A'
-                print(f"Segment {i}: {segment}")
-                print(f"Most common char: {most_common_char}")
-                print(f"Shift: {shift}")
-    
-        print(f"Derived key: {key}")
+        with open("no2ans.txt", 'w') as f:
+                key = ['L', 'Y', 'R', 'A', 'N', 'O', 'V', 'A', 'L', 'A', 'Y', 'R']
+                decrypted_text = decrypt_vigenere(ciphertext, key)
+                f.write(decrypted_text)
 
 
 
@@ -214,5 +224,75 @@ def no3(filename: str):
                 f.write("\n")
                 for trigram, count, in trigram_counts.most_common(100):
                         f.write(f"{trigram} : {count}\n")
-        
-no3("no3.txt")
+
+import numpy as np
+from sympy import Matrix
+
+def mod_inverse_matrix(matrix, mod):
+    matrix = Matrix(matrix)  
+    det = int(matrix.det())  
+    
+    # Compute modular inverse of determinant
+    det_inv = pow(det, -1, mod)  
+    if det_inv is None:
+        raise ValueError("Matrix is not invertible under mod {}".format(mod))
+    
+    # Compute adjugate (cofactor matrix transpose)
+    adjugate = matrix.adjugate()  
+
+    # Compute modular inverse matrix
+    inverse_matrix = (det_inv * adjugate) % mod  
+    
+    return np.array(inverse_matrix.tolist(), dtype=int)
+
+def mod_matrix_multiply(A, B, mod):
+    A = np.array(A)
+    B = np.array(B)
+    result = np.dot(A, B) % mod  
+    return result
+
+def text_to_matrix(text, n):
+    text_numbers = [(ord(char) - ord('A')) for char in text.upper() if char.isalpha()]
+    while len(text_numbers) % n != 0:
+        text_numbers.append(0)  # Padding with 'A' (0) if needed
+    
+    return [text_numbers[i:i+n] for i in range(0, len(text_numbers), n)]
+
+def matrix_to_text(matrix):
+    text = "".join(chr((num % 26) + ord('A')) for row in matrix for num in row)
+    return text
+
+
+def hill_cipher_decrypt(key, ciphertext, mod, n):
+    key_inv = mod_inverse_matrix(key, mod)
+    ciphertext_matrices = text_to_matrix(ciphertext, n)
+    
+    print("Decrypted Matrices:")
+    decrypted_text = ""
+    for matrix in ciphertext_matrices:
+        decrypted_matrix = mod_matrix_multiply(key_inv, matrix, mod)
+        print(np.array(decrypted_matrix))
+        decrypted_text += matrix_to_text([decrypted_matrix])
+    
+    return decrypted_text
+
+def no4(filename: str):
+    with open(filename, 'r') as file:
+        ciphertext = file.read().strip()
+
+    key = np.array([
+        [6, 24, 1],
+        [13, 16, 10],
+        [20, 17, 15],
+    ])
+    mod = 26
+    n = 3
+
+    try:
+        plaintext = hill_cipher_decrypt(key, ciphertext, mod, n)
+        with open("no4ans.txt", 'w') as f:
+            f.write(plaintext)
+    except ValueError as e:
+        print(e)
+                
+no2("no2.txt")
