@@ -1,10 +1,14 @@
 from PIL import Image
 
 def msg_to_bin(message: str):
-        return ''.join(format(ord(c), '08b') for c in message)
+        length = len(message)
+        bin_length = format(length, "016b")
+        return bin_length + ''.join(format(ord(c), '08b') for c in message)
 
 def bin_to_msg(bin_data: str):
-        ch = [bin_data[i:i+8] for i in range(0, len(bin_data), 8)]
+        length = int(bin_data[:16], 2)
+        msg_bin = bin_data[16:16 + (length * 8)]
+        ch = [msg_bin[i:i+8] for i in range(0, len(msg_bin), 8)]
         return ''.join(chr(int(c, 2)) for c in ch if int(c, 2) != 0)
 
 def lsb(filename: str, msg: str, output: str):
