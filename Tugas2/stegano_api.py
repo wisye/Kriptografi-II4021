@@ -11,7 +11,7 @@ def bin_to_msg(bin_data: str):
         ch = [msg_bin[i:i+8] for i in range(0, len(msg_bin), 8)]
         return ''.join(chr(int(c, 2)) for c in ch if int(c, 2) != 0)
 
-def lsb(filename: str, msg: str, output: str):
+def encode_lsb(filename: str, msg: str, output: str):
         img = Image.open(filename)
         bin_msg = msg_to_bin(msg)
         pixels = list(img.getdata())
@@ -52,5 +52,5 @@ def decode_lsb(filename: str):
                 
         return bin_to_msg(msg)
 
-# lsb("sucipto.jpeg", "asidhosiahdasiodh", "sucipto2.png")
-print(decode_lsb("sucipto2.png"))
+# lsb("sucipto.jpeg", "asdas", "sucipto2.png")
+# print(decode_lsb("sucipto2.png"))
