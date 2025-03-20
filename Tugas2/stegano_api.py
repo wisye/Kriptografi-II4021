@@ -141,22 +141,23 @@ def encode_lsb(cover_file: str, prefix: str, msg: str, output_file: str, key: st
             index += 1
         encoded.append((r, g, b) + px[3:] if len(px) == 4 else (r, g, b))
 
-    # if is_sequential:
-    #     positions = range(len(prefix), len(prefix) + len(msg))
-    # else:
-    #     # Non Sequential
-    #     exit()
-
-    # # Encode message
-    # for px in pixels[len(prefix) + 1:]:
-    #     r, g, b = px[:3]
-    #     r = (r & ~1) | int(msg[index])
-    #     index += 1
-    #     g = (g & ~1) | int(msg[index])
-    #     index += 1
-    #     b = (b & ~1) | int(msg[index])
-    #     index += 1
-    #     encoded.append((r, g, b) + px[3:] if len(px) == 4 else (r, g, b))
+    if is_sequential:
+        index = 0
+        for px in pixels[len(prefix) // 3 + 1:]:
+            r, g, b = px[:3]
+            if (index < len(msg)):
+                r = (r & ~1) | int(msg[index])
+                index += 1
+            if (index < len(prefix)):
+                g = (g & ~1) | int(msg[index])
+                index += 1
+            if (index < len(prefix)):
+                b = (b & ~1) | int(msg[index])
+                index += 1
+            encoded.append((r, g, b) + px[3:] if len(px) == 4 else (r, g, b))
+    else:
+        # Non Sequential
+        exit()
 
     encoded_img = Image.new(img.mode, img.size)
     encoded_img.putdata(encoded)
@@ -167,8 +168,15 @@ def decode_lsb(cover_file: str, key: str, is_sequential: bool):
     img = Image.open(cover_file)
     pixels = list(img.getdata())
 
+    prefix = ''
+    for px in pixels[:6]:
+        r, g, b = px[:3]
+        prefix += str(r & 1)
+        prefix += str(g & 1)
+        prefix += str(b & 1)
+
     msg = ''
-    for px in pixels:
+    for px in pixels[6:]:
         r, g, b = px[:3]
         msg += str(r & 1)
         msg += str(g & 1)
@@ -176,7 +184,8 @@ def decode_lsb(cover_file: str, key: str, is_sequential: bool):
 
     return parse_prefix(msg)
 
-encode_lsb('sucipto.jpeg', create_prefix('hello.png', True, True), 'hello.png', 'output.png', 'asdfhalf', True)
+encode_lsb('sucipto.jpeg', create_prefix('hello.png', True, True), file_to_bin('hello.png'), 'output.png', 'asdfhalf', True)
 
+parse_prefix('output.png')
 
-# decode_lsb(encode_lsb('sucipto.jpeg', create_prefix('hello.png', True, True), 'hello.png', 'output.png', 'asdfhalf', True), file_to_bin('hello.png'), True)
+decode_lsb('output.png', 'asdfhalf', True)
