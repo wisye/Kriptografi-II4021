@@ -8,7 +8,7 @@ import os
 import sys
 import subprocess
 
-# === Audio Player ===
+# ===== Audio Player =====
 def play_audio(path):
     if sys.platform.startswith('win'): # Windows
         os.startfile(path)
@@ -17,10 +17,9 @@ def play_audio(path):
     else: # Linux ? 
         subprocess.call(['xdg-open', path])
 
-# === Encryption ===
+# ===== Encryption =====
 # Will encrypt/decrypt a normal plaintext into a ciphertext using vigenere cipher
-# Key paramter: string (3-25 Chars)
-
+# Key parameter: string (3-25 Chars)
 def vigenere_encrypt(plaintext, key):
     ciphertext = []
     key_length = len(key)
@@ -40,7 +39,7 @@ def vigenere_decrypt(ciphertext, key):
         plaintext.append(value)
     return bytes(plaintext)
 
-# === WAV File Processing ===
+# ===== WAV File Processing =====
 def get_wave_params(wav_path):
     with wave.open(wav_path, 'rb') as w:
         params = w.getparams()
@@ -58,32 +57,18 @@ def int_to_bytes(val, length=4):
 def bytes_to_int(b):
     return int.from_bytes(b, byteorder='big')
 
-params, frames = get_wave_params("GOT Theme.wav")
-n_channels, sampwidth, framerate, n_frames, comp_type, comp_name = params
-
-print(f"Channels: {n_channels}")
-print(f"Sampwidth: {sampwidth}")
-print(f"Framerate: {framerate}")
-print(f"Frames: {n_frames}")
-print(f"Comp Type: {comp_type}")
-print(f"Comp Name: {comp_name}")
-print(params)
-samples = []
-for i in range(0, len(frames), 2):
-    sample = frames[i] | (frames[i+1] << 8)
-    samples.append(sample)
-
-print()
-print(frames[:20])
-print (samples[:20])
-# === LSB Steganography ===
+# ===== LSB Steganography =====
 def embed(cover_path, out_path, header_data, secret_data, randomize=False, seed=None):
+    
+    # Get Cover WAV Detail
     params, frames = get_wave_params(cover_path)
     n_channels, sampwidth, framerate, n_frames, comp_type, comp_name = params
-    if sampwidth != 2:
-        raise ValueError("Cover WAV must be 16-bit PCM.")
+    
+    if sampwidth != 2: # 2 sampwidth = 16-bit PCM
+        raise ValueError("Cover WAV must be 16-bit PCM.") # 16-bit PCM only
 
     samples = []
+    
     for i in range(0, len(frames), 2):
         sample = frames[i] | (frames[i+1] << 8)
         samples.append(sample)
@@ -185,7 +170,7 @@ def extract(stego_path, header_size, secret_size, randomize=False, seed=None):
 
     return bytes(header_bytes), bytes(secret_bytes)
 
-
+# ===== PSNR Calculation =====
 def compute_psnr(cover_path, stego_path):
     _, orig_frames = get_wave_params(cover_path)
     _, stego_frames = get_wave_params(stego_path)
@@ -214,9 +199,7 @@ def compute_psnr(cover_path, stego_path):
     psnr = 10.0 * math.log10((max_val * max_val) / mse)
     return psnr
 
-###############################
-# EMBED / EXTRACT WRAPPERS
-###############################
+# ===== Header =====
 def build_header(file_name, extension, enc_bool, rand_bool, secret_data_len):
     fn_bytes = file_name.encode('utf-8')
     ext_bytes = extension.encode('utf-8')
@@ -230,7 +213,6 @@ def build_header(file_name, extension, enc_bool, rand_bool, secret_data_len):
 
     header = fn_len_bytes + fn_bytes + ext_len_bytes + ext_bytes + enc_byte + r_byte + data_len_bytes
     return header
-
 
 def parse_header(header_bytes):
     idx = 0
@@ -256,10 +238,8 @@ def parse_header(header_bytes):
 
     return fn, ext, enc_bool, rand_bool, d_len
 
-###############################
-# GUI
-###############################
 
+# ===== GUI =====
 class AudioStegoApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -286,9 +266,6 @@ class AudioStegoApp(tk.Tk):
         frame.pack_forget()
         self.menu_frame.pack(padx=20, pady=20)
 
-#######################################
-# EMBED UI
-#######################################
 class EmbedFrame(tk.Frame):
     def __init__(self, parent, menu_frame):
         super().__init__(parent)
@@ -408,7 +385,6 @@ class EmbedDetailsFrame(tk.Frame):
         tk.Button(self, text="Embed", command=self.do_embed).grid(row=3, column=0, padx=5, pady=20, sticky="w")
         tk.Button(self, text="Back", command=self.go_back).grid(row=3, column=1, padx=5, pady=20, sticky="w")
 
-        # Store the path of the final embedded WAV
         self.saved_stego_path = None
 
     def go_back(self):
@@ -515,9 +491,6 @@ class EmbedDetailsFrame(tk.Frame):
         tk.Button(play_window, text="Play Original Cover", command=play_original).pack(pady=5)
         tk.Button(play_window, text="Play Stego Audio", command=play_stego).pack(pady=5)
 
-#######################################
-# EXTRACT UI
-#######################################
 class ExtractFrame(tk.Frame):
     def __init__(self, parent, menu_frame):
         super().__init__(parent)
@@ -547,7 +520,7 @@ class ExtractFrame(tk.Frame):
         if not self.stego_file_path:
             return
         try:
-            # read first 200 bytes from the wave in sequential for the header
+          
             header_guess_size = 200  # max possible header bytes
 
             params, frames = get_wave_params(self.stego_file_path)
@@ -580,7 +553,6 @@ class ExtractFrame(tk.Frame):
             dec_key=None
 
             if rbool and ebool:
-                # ask once
                 t = self.prompt_for_key("File is RANDOM + ENCRYPTED. Enter single key:")
                 if not t: return
                 seed_key = t
@@ -619,7 +591,6 @@ class ExtractFrame(tk.Frame):
                 dec_final = base64.b64decode(dec)
                 secret_data = dec_final
 
-            # finalize filename
             suggested_name = fn2 if fn2 else "extracted"
             if ext2:
                 suggested_name += "."+ext2
@@ -664,7 +635,7 @@ class ExtractFrame(tk.Frame):
             return var.get().strip()
         return None
 
-# # RUN
-# if __name__=="__main__":
-#     app = AudioStegoApp()
-#     app.mainloop()
+# ===== Main =====
+if __name__=="__main__":
+    app = AudioStegoApp()
+    app.mainloop()
