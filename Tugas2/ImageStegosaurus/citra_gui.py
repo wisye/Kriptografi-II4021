@@ -3,7 +3,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 import numpy as np
-from stegano_api import encode_lsb, decode_lsb, verify_lsb, calculate_psnr, encode_bpcs, decode_bpcs
+from lsb import encode_lsb, decode_lsb, calculate_psnr
+from bpcs import encode_bpcs, decode_bpcs
 
 class SteganographyApp:
     def __init__(self, root):
@@ -15,14 +16,13 @@ class SteganographyApp:
         # Variables
         self.cover_path = tk.StringVar()
         self.message_path = tk.StringVar()
-        self.stego_path = tk.StringVar(value="stego/stego_output.png")
-        self.extraction_path = tk.StringVar(value="extraction/extracted_file")
+        self.stego_path = tk.StringVar(value="stego_output.png")
+        self.extraction_path = tk.StringVar(value="extracted_file")
         self.stego_key = tk.StringVar()
         self.encryption_type = tk.StringVar(value="none")
         self.is_sequential = tk.BooleanVar(value=True)
         self.method = tk.StringVar(value="lsb")
         self.threshold = tk.DoubleVar(value=0.3)
-        self.use_media_prefix = tk.BooleanVar(value=False)
         
         # Create directories if they don't exist
         os.makedirs("stego", exist_ok=True)
@@ -88,9 +88,6 @@ class SteganographyApp:
         ttk.Entry(input_frame, textvariable=self.stego_path, width=50).grid(column=1, row=2, padx=5, pady=5)
         ttk.Button(input_frame, text="Browse...", command=self.browse_stego_output).grid(column=2, row=2, padx=5, pady=5)
         
-        # Media prefix option
-        ttk.Checkbutton(input_frame, text="Use 'media/' prefix for input files", variable=self.use_media_prefix).grid(column=0, row=3, columnspan=3, sticky=tk.W, padx=5, pady=5)
-        
         # Options
         ttk.Label(options_frame, text="Method:").grid(column=0, row=0, sticky=tk.W, padx=5, pady=5)
         method_combo = ttk.Combobox(options_frame, textvariable=self.method, state="readonly")
@@ -98,34 +95,47 @@ class SteganographyApp:
         method_combo.grid(column=1, row=0, sticky=tk.W, padx=5, pady=5)
         method_combo.bind('<<ComboboxSelected>>', self.update_options_visibility)
         
-        # BPCS threshold (initially hidden)
-        self.threshold_label = ttk.Label(options_frame, text="BPCS Threshold [0.1, 0.5]:")
-        self.threshold_label.grid(column=0, row=1, sticky=tk.W, padx=5, pady=5)
-        self.threshold_entry = ttk.Entry(options_frame, textvariable=self.threshold, width=10)
-        self.threshold_entry.grid(column=1, row=1, sticky=tk.W, padx=5, pady=5)
+        # Encryption options
+        ttk.Label(options_frame, text="Encrypt message?").grid(column=0, row=1, sticky=tk.W, padx=5, pady=5)
+        encrypt_frame = ttk.Frame(options_frame)
+        encrypt_frame.grid(column=1, row=1, sticky=tk.W, padx=5, pady=5)
+        self.encrypt_yes = ttk.Radiobutton(encrypt_frame, text="Yes", variable=self.encryption_type, value="vigenere", command=self.update_key_visibility)
+        self.encrypt_no = ttk.Radiobutton(encrypt_frame, text="No", variable=self.encryption_type, value="none", command=self.update_key_visibility)
+        self.encrypt_yes.pack(side=tk.LEFT, padx=5)
+        self.encrypt_no.pack(side=tk.LEFT, padx=5)
+        self.encrypt_no.invoke()  # Default to "No"
         
-        # Initially hide BPCS-specific options
-        self.threshold_label.grid_remove()
-        self.threshold_entry.grid_remove()
-        
-        ttk.Label(options_frame, text="Encryption:").grid(column=0, row=2, sticky=tk.W, padx=5, pady=5)
-        encryption_combo = ttk.Combobox(options_frame, textvariable=self.encryption_type, state="readonly")
-        encryption_combo['values'] = ('none', 'vigenere')
-        encryption_combo.grid(column=1, row=2, sticky=tk.W, padx=5, pady=5)
-        encryption_combo.bind('<<ComboboxSelected>>', self.update_key_visibility)
-        
-        self.key_label = ttk.Label(options_frame, text="Stego Key:")
-        self.key_label.grid(column=0, row=3, sticky=tk.W, padx=5, pady=5)
+        # Key input
+        self.key_label = ttk.Label(options_frame, text="Enter secret key (max 25 chars):")
+        self.key_label.grid(column=0, row=2, sticky=tk.W, padx=5, pady=5)
         self.key_entry = ttk.Entry(options_frame, textvariable=self.stego_key, width=30, show="*")
-        self.key_entry.grid(column=1, row=3, sticky=tk.W, padx=5, pady=5)
+        self.key_entry.grid(column=1, row=2, sticky=tk.W, padx=5, pady=5)
         
         # Initially hide key fields
         self.key_label.grid_remove()
         self.key_entry.grid_remove()
         
-        # LSB Specific options
-        self.sequential_check = ttk.Checkbutton(options_frame, text="Use Sequential Embedding", variable=self.is_sequential, command=self.update_sequential_state)
-        self.sequential_check.grid(column=0, row=4, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        # Method-specific options
+        # LSB options
+        self.lsb_frame = ttk.Frame(options_frame)
+        self.lsb_frame.grid(column=0, row=3, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
+        ttk.Label(self.lsb_frame, text="Use sequential embedding?").pack(side=tk.LEFT, padx=5)
+        self.seq_yes = ttk.Radiobutton(self.lsb_frame, text="Yes", variable=self.is_sequential, value=True, command=self.update_sequential_state)
+        self.seq_no = ttk.Radiobutton(self.lsb_frame, text="No", variable=self.is_sequential, value=False, command=self.update_sequential_state)
+        self.seq_yes.pack(side=tk.LEFT, padx=5)
+        self.seq_no.pack(side=tk.LEFT, padx=5)
+        
+        # BPCS options
+        self.bpcs_frame = ttk.Frame(options_frame)
+        self.bpcs_frame.grid(column=0, row=4, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
+        ttk.Label(self.bpcs_frame, text="Threshold [0.1, 0.5]:").pack(side=tk.LEFT, padx=5)
+        threshold_entry = ttk.Entry(self.bpcs_frame, textvariable=self.threshold, width=10)
+        threshold_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Initially hide BPCS options
+        self.bpcs_frame.grid_remove()
         
         # Key requirement note for non-sequential embedding
         self.nonseq_key_note = ttk.Label(options_frame, text="Note: Non-sequential embedding requires a key")
@@ -165,37 +175,48 @@ class SteganographyApp:
         method_combo = ttk.Combobox(options_frame, textvariable=self.method, state="readonly")
         method_combo['values'] = ('lsb', 'bpcs')
         method_combo.grid(column=1, row=0, sticky=tk.W, padx=5, pady=5)
-        method_combo.bind('<<ComboboxSelected>>', self.update_options_visibility)
+        method_combo.bind('<<ComboboxSelected>>', self.update_extract_options_visibility)
         
-        # BPCS threshold
-        extract_threshold_label = ttk.Label(options_frame, text="BPCS Threshold [0.1, 0.5]:")
-        extract_threshold_label.grid(column=0, row=1, sticky=tk.W, padx=5, pady=5)
-        extract_threshold_entry = ttk.Entry(options_frame, textvariable=self.threshold, width=10)
-        extract_threshold_entry.grid(column=1, row=1, sticky=tk.W, padx=5, pady=5)
+        # Encryption options
+        ttk.Label(options_frame, text="Encrypt message?").grid(column=0, row=1, sticky=tk.W, padx=5, pady=5)
+        extract_encrypt_frame = ttk.Frame(options_frame)
+        extract_encrypt_frame.grid(column=1, row=1, sticky=tk.W, padx=5, pady=5)
+        self.extract_encrypt_yes = ttk.Radiobutton(extract_encrypt_frame, text="Yes", variable=self.encryption_type, value="vigenere", command=self.update_key_visibility)
+        self.extract_encrypt_no = ttk.Radiobutton(extract_encrypt_frame, text="No", variable=self.encryption_type, value="none", command=self.update_key_visibility)
+        self.extract_encrypt_yes.pack(side=tk.LEFT, padx=5)
+        self.extract_encrypt_no.pack(side=tk.LEFT, padx=5)
         
-        # Initially hide BPCS-specific options
-        extract_threshold_label.grid_remove()
-        extract_threshold_entry.grid_remove()
-        
-        # Match options with the embed tab
-        ttk.Label(options_frame, text="Encryption:").grid(column=0, row=2, sticky=tk.W, padx=5, pady=5)
-        extraction_encryption_combo = ttk.Combobox(options_frame, textvariable=self.encryption_type, state="readonly")
-        extraction_encryption_combo['values'] = ('none', 'vigenere')
-        extraction_encryption_combo.grid(column=1, row=2, sticky=tk.W, padx=5, pady=5)
-        extraction_encryption_combo.bind('<<ComboboxSelected>>', self.update_key_visibility)
-        
-        extract_key_label = ttk.Label(options_frame, text="Stego Key:")
-        extract_key_label.grid(column=0, row=3, sticky=tk.W, padx=5, pady=5)
+        # Key input
+        extract_key_label = ttk.Label(options_frame, text="Enter secret key (max 25 chars):")
+        extract_key_label.grid(column=0, row=2, sticky=tk.W, padx=5, pady=5)
         extract_key_entry = ttk.Entry(options_frame, textvariable=self.stego_key, width=30, show="*")
-        extract_key_entry.grid(column=1, row=3, sticky=tk.W, padx=5, pady=5)
+        extract_key_entry.grid(column=1, row=2, sticky=tk.W, padx=5, pady=5)
         
         # Initially hide key fields
         extract_key_label.grid_remove()
         extract_key_entry.grid_remove()
         
-        # LSB Specific options
-        extract_sequential_check = ttk.Checkbutton(options_frame, text="Use Sequential Embedding", variable=self.is_sequential, command=self.update_sequential_state)
-        extract_sequential_check.grid(column=0, row=4, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        # Method-specific options
+        # LSB options
+        self.extract_lsb_frame = ttk.Frame(options_frame)
+        self.extract_lsb_frame.grid(column=0, row=3, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
+        ttk.Label(self.extract_lsb_frame, text="Use sequential embedding?").pack(side=tk.LEFT, padx=5)
+        extract_seq_yes = ttk.Radiobutton(self.extract_lsb_frame, text="Yes", variable=self.is_sequential, value=True, command=self.update_sequential_state)
+        extract_seq_no = ttk.Radiobutton(self.extract_lsb_frame, text="No", variable=self.is_sequential, value=False, command=self.update_sequential_state)
+        extract_seq_yes.pack(side=tk.LEFT, padx=5)
+        extract_seq_no.pack(side=tk.LEFT, padx=5)
+        
+        # BPCS options
+        self.extract_bpcs_frame = ttk.Frame(options_frame)
+        self.extract_bpcs_frame.grid(column=0, row=4, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
+        ttk.Label(self.extract_bpcs_frame, text="Threshold [0.1, 0.5]:").pack(side=tk.LEFT, padx=5)
+        extract_threshold_entry = ttk.Entry(self.extract_bpcs_frame, textvariable=self.threshold, width=10)
+        extract_threshold_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Initially hide BPCS options
+        self.extract_bpcs_frame.grid_remove()
         
         # Key requirement note for non-sequential embedding
         self.extract_nonseq_key_note = ttk.Label(options_frame, text="Note: Non-sequential embedding requires a key")
@@ -212,17 +233,26 @@ class SteganographyApp:
         ttk.Button(button_frame, text="Clear", command=self.clear_results).pack(side=tk.LEFT, padx=5)
 
     def update_options_visibility(self, event=None):
-        # Show/hide method-specific options
+        # Show/hide method-specific options for embedding tab
         if self.method.get() == 'bpcs':
-            self.threshold_label.grid()
-            self.threshold_entry.grid()
-            self.sequential_check.grid_remove()
+            self.lsb_frame.grid_remove()
+            self.bpcs_frame.grid()
             self.nonseq_key_note.grid_remove()
+        else:
+            self.bpcs_frame.grid_remove()
+            self.lsb_frame.grid()
+            # Check if we need to show the note about non-sequential requiring key
+            self.update_sequential_state()
+
+    def update_extract_options_visibility(self, event=None):
+        # Show/hide method-specific options for extraction tab
+        if self.method.get() == 'bpcs':
+            self.extract_lsb_frame.grid_remove()
+            self.extract_bpcs_frame.grid()
             self.extract_nonseq_key_note.grid_remove()
         else:
-            self.threshold_label.grid_remove()
-            self.threshold_entry.grid_remove()
-            self.sequential_check.grid()
+            self.extract_bpcs_frame.grid_remove()
+            self.extract_lsb_frame.grid()
             # Check if we need to show the note about non-sequential requiring key
             self.update_sequential_state()
 
@@ -259,7 +289,8 @@ class SteganographyApp:
             filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp")]
         )
         if filename:
-            self.cover_path.set(filename)
+            # Just store the filename, not the full path with "media/"
+            self.cover_path.set(os.path.basename(filename))
 
     def browse_message(self):
         filename = filedialog.askopenfilename(
@@ -267,7 +298,8 @@ class SteganographyApp:
             filetypes=[("All files", "*.*")]
         )
         if filename:
-            self.message_path.set(filename)
+            # Just store the filename, not the full path with "media/"
+            self.message_path.set(os.path.basename(filename))
 
     def browse_stego_output(self):
         filename = filedialog.asksaveasfilename(
@@ -276,7 +308,8 @@ class SteganographyApp:
             filetypes=[("PNG files", "*.png")]
         )
         if filename:
-            self.stego_path.set(filename)
+            # Just store the filename, not the full path with "stego/"
+            self.stego_path.set(os.path.basename(filename))
 
     def browse_stego_input(self):
         filename = filedialog.askopenfilename(
@@ -284,7 +317,8 @@ class SteganographyApp:
             filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp")]
         )
         if filename:
-            self.stego_path.set(filename)
+            # Just store the filename, not the full path with "stego/"
+            self.stego_path.set(os.path.basename(filename))
 
     def browse_extraction(self):
         filename = filedialog.asksaveasfilename(
@@ -292,19 +326,20 @@ class SteganographyApp:
             filetypes=[("All files", "*.*")]
         )
         if filename:
-            self.extraction_path.set(filename)
+            # Just store the filename, not the full path with "extraction/"
+            self.extraction_path.set(os.path.basename(filename))
 
     def embed_message(self):
         try:
-            # Prepare paths with media prefix if needed
-            cover_path = self.cover_path.get()
-            message_path = self.message_path.get()
-            
-            if self.use_media_prefix.get():
-                if not cover_path.startswith("media/"):
-                    cover_path = "media/" + cover_path
-                if not message_path.startswith("media/"):
-                    message_path = "media/" + message_path
+            # Get parameters
+            cover_path = "media/" + self.cover_path.get()
+            message_path = "media/" + self.message_path.get()
+            stego_path = "stego/" + self.stego_path.get()
+            stego_key = self.stego_key.get() if self.stego_key.get() else None
+            encryption_type = self.encryption_type.get() if self.encryption_type.get() == 'vigenere' else None
+            is_sequential = self.is_sequential.get()
+            method = self.method.get()
+            threshold = self.threshold.get()
             
             # Validate inputs
             if not os.path.exists(cover_path):
@@ -314,15 +349,7 @@ class SteganographyApp:
             if not os.path.exists(message_path):
                 messagebox.showerror("Error", f"Message file does not exist: {message_path}")
                 return
-            
-            # Get parameters
-            stego_path = self.stego_path.get()
-            stego_key = self.stego_key.get()
-            encryption_type = self.encryption_type.get() if self.encryption_type.get() != 'none' else None
-            is_sequential = self.is_sequential.get()
-            method = self.method.get()
-            threshold = self.threshold.get()
-            
+                
             # Validate threshold for BPCS
             if method == 'bpcs':
                 if threshold < 0.1 or threshold > 0.5:
@@ -338,10 +365,6 @@ class SteganographyApp:
             if stego_key and len(stego_key) > 25:
                 messagebox.showerror("Error", "Key must be 25 characters or less.")
                 return
-            
-            # Only pass stego_key to function if we need it
-            if encryption_type != 'vigenere' and (method != 'lsb' or is_sequential):
-                stego_key = None
             
             self.status_var.set("Embedding message...")
             self.root.update()
@@ -350,7 +373,7 @@ class SteganographyApp:
             if method == 'lsb':
                 encode_lsb(cover_path, message_path, stego_path, stego_key, encryption_type, is_sequential)
             else:  # BPCS
-                encode_bpcs(cover_path, message_path, stego_path, threshold, stego_key, encryption_type)
+                encode_bpcs(cover_path, message_path, stego_path, threshold=threshold, stego_key=stego_key, encryption_type=encryption_type)
             
             # Calculate PSNR
             psnr = calculate_psnr(cover_path, stego_path)
@@ -359,7 +382,7 @@ class SteganographyApp:
             messagebox.showinfo("Success", f"Message embedded successfully!\nPSNR: {psnr:.2f} dB")
             
             # Show images
-            self.show_images(cover_path)
+            self.show_images(cover_path, stego_path)
             
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {str(e)}")
@@ -367,20 +390,20 @@ class SteganographyApp:
 
     def extract_message(self):
         try:
-            # Validate inputs
-            stego_path = self.stego_path.get()
-            if not os.path.exists(stego_path):
-                messagebox.showerror("Error", "Stego image file does not exist!")
-                return
-            
             # Get parameters
-            extraction_path = self.extraction_path.get()
-            stego_key = self.stego_key.get()
-            encryption_type = self.encryption_type.get() if self.encryption_type.get() != 'none' else None
+            stego_path = "stego/" + self.stego_path.get()
+            extraction_path = "extraction/" + self.extraction_path.get()
+            stego_key = self.stego_key.get() if self.stego_key.get() else None
+            encryption_type = self.encryption_type.get() if self.encryption_type.get() == 'vigenere' else None
             is_sequential = self.is_sequential.get()
             method = self.method.get()
             threshold = self.threshold.get()
             
+            # Validate inputs
+            if not os.path.exists(stego_path):
+                messagebox.showerror("Error", f"Stego image file does not exist: {stego_path}")
+                return
+                
             # Validate threshold for BPCS
             if method == 'bpcs':
                 if threshold < 0.1 or threshold > 0.5:
@@ -397,10 +420,6 @@ class SteganographyApp:
                 messagebox.showerror("Error", "Key must be 25 characters or less.")
                 return
             
-            # Only pass stego_key to function if we need it
-            if encryption_type != 'vigenere' and (method != 'lsb' or is_sequential):
-                stego_key = None
-            
             self.status_var.set("Extracting message...")
             self.root.update()
             
@@ -408,7 +427,7 @@ class SteganographyApp:
             if method == 'lsb':
                 decode_lsb(stego_path, extraction_path, stego_key, encryption_type, is_sequential)
             else:  # BPCS
-                decode_bpcs(stego_path, extraction_path, threshold, stego_key, encryption_type)
+                decode_bpcs(stego_path, extraction_path, threshold=threshold, stego_key=stego_key, encryption_type=encryption_type)
             
             self.status_var.set("Message extracted successfully!")
             self.results_text.insert(tk.END, f"Message extracted to {extraction_path}\n")
@@ -420,40 +439,40 @@ class SteganographyApp:
 
     def verify_message(self):
         try:
+            # Get paths
+            original_file = "media/" + self.message_path.get()
+            extracted_file = "extraction/" + self.extraction_path.get()
+            
             # Validate inputs
-            original_file = self.message_path.get()
-            extracted_file = self.extraction_path.get()
-            
-            if self.use_media_prefix.get() and not original_file.startswith("media/"):
-                original_file = "media/" + original_file
-            
             if not os.path.exists(original_file):
-                messagebox.showerror("Error", "Original message file does not exist!")
+                messagebox.showerror("Error", f"Original message file does not exist: {original_file}")
                 return
                 
             if not os.path.exists(extracted_file):
-                messagebox.showerror("Error", "Extracted file does not exist!")
+                messagebox.showerror("Error", f"Extracted file does not exist: {extracted_file}")
                 return
             
             self.status_var.set("Verifying message...")
             self.root.update()
             
-            # Use the appropriate verify function
-            if self.method.get() == 'lsb':
-                result = verify_lsb(original_file, extracted_file)
-            else:
-                # Using generic verification for BPCS
-                with open(original_file, 'rb') as f1, open(extracted_file, 'rb') as f2:
-                    original_data = f1.read()
-                    extracted_data = f2.read()
+            # Simple binary comparison
+            with open(original_file, 'rb') as f1, open(extracted_file, 'rb') as f2:
+                original_data = f1.read()
+                extracted_data = f2.read()
                 result = original_data == extracted_data
             
             if result:
                 self.results_text.insert(tk.END, "Verification result: Files are identical!\n")
                 messagebox.showinfo("Verification", "Files are identical!")
             else:
-                self.results_text.insert(tk.END, "Verification result: Files differ!\n")
-                messagebox.showwarning("Verification", "Files differ!")
+                # Calculate how many bytes differ
+                min_len = min(len(original_data), len(extracted_data))
+                different_bytes = sum(1 for i in range(min_len) if original_data[i] != extracted_data[i])
+                size_diff = abs(len(original_data) - len(extracted_data))
+                
+                self.results_text.insert(tk.END, f"Verification result: Files differ!\n")
+                self.results_text.insert(tk.END, f"Different bytes: {different_bytes}, Size difference: {size_diff} bytes\n")
+                messagebox.showwarning("Verification", f"Files differ!\nDifferent bytes: {different_bytes}, Size difference: {size_diff} bytes")
             
             self.status_var.set("Verification complete")
             
@@ -461,20 +480,20 @@ class SteganographyApp:
             messagebox.showerror("Error", f"An error occurred during verification: {str(e)}")
             self.status_var.set("Error during verification")
 
-    def show_images(self, cover_path=None):
-        # Use provided cover path or the one from the field
+    def show_images(self, cover_path=None, stego_path=None):
+        # Use provided paths or the ones from fields
         if not cover_path:
-            cover_path = self.cover_path.get()
-            if self.use_media_prefix.get() and not cover_path.startswith("media/"):
-                cover_path = "media/" + cover_path
+            cover_path = "media/" + self.cover_path.get()
+        if not stego_path:
+            stego_path = "stego/" + self.stego_path.get()
         
-        # Check if cover and stego images exist
+        # Check if images exist
         if not os.path.exists(cover_path):
             messagebox.showerror("Error", f"Cover image file does not exist: {cover_path}")
             return
             
-        if not os.path.exists(self.stego_path.get()):
-            messagebox.showerror("Error", "Stego image file does not exist!")
+        if not os.path.exists(stego_path):
+            messagebox.showerror("Error", f"Stego image file does not exist: {stego_path}")
             return
         
         # Close existing windows if open
@@ -493,7 +512,7 @@ class SteganographyApp:
         
         # Load images
         original_img = Image.open(cover_path)
-        stego_img = Image.open(self.stego_path.get())
+        stego_img = Image.open(stego_path)
         
         # Calculate appropriate size for display (max 800x600)
         max_width, max_height = 800, 600
@@ -525,9 +544,13 @@ class SteganographyApp:
         stego_label = ttk.Label(self.stego_window, image=self.stego_photo)
         stego_label.pack(padx=10, pady=10)
         
+        # Add info to image windows
+        ttk.Label(self.original_window, text=f"File: {os.path.basename(cover_path)}").pack(pady=5)
+        ttk.Label(self.stego_window, text=f"File: {os.path.basename(stego_path)}").pack(pady=5)
+        
         # Add PSNR info to stego window
         try:
-            psnr = calculate_psnr(cover_path, self.stego_path.get())
+            psnr = calculate_psnr(cover_path, stego_path)
             psnr_label = ttk.Label(self.stego_window, text=f"PSNR: {psnr:.2f} dB")
             psnr_label.pack(pady=5)
         except:
@@ -536,14 +559,13 @@ class SteganographyApp:
     def clear_fields(self):
         self.cover_path.set("")
         self.message_path.set("")
-        self.stego_path.set("stego/stego_output.png")
-        self.extraction_path.set("extraction/extracted_file")
+        self.stego_path.set("stego_output.png")
+        self.extraction_path.set("extracted_file")
         self.stego_key.set("")
         self.encryption_type.set("none")
         self.is_sequential.set(True)
         self.method.set("lsb")
         self.threshold.set(0.3)
-        self.use_media_prefix.set(False)
         self.status_var.set("Ready")
 
     def clear_results(self):
