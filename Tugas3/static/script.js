@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (responseMessageDiv) {
                         responseMessageDiv.textContent = message;
                         responseMessageDiv.className = isError ? 'message error-message' : 'message';
-                        setTimeout(() => { responseMessageDiv.textContent = ''; responseMessageDiv.className = 'message'; }, 5000);
+                        setTimeout(() => { responseMessageDiv.textContent = ''; responseMessageDiv.className = 'message'; }, 1000);
                 }
         }
 

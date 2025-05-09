@@ -38,7 +38,7 @@ def init_db():
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
         
-        # CHeck if table exists
+        # Check if table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
         if cursor.fetchone() is None:
                 with open("schema.sql", "r") as f:
