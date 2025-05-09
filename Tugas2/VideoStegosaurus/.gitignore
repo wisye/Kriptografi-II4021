@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+frames/
+original_frames/
+
+*.mp4
+*.avi
