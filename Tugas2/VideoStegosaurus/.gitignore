@@ -6,6 +6,7 @@ __pycache__/
 
 frames/
 original_frames/
+stego_frames/
 
 *.mp4
 *.avi
