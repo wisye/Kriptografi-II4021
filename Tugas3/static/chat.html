@@ -1,0 +1,34 @@
+<!-- static/chat.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatroom</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container chat-container">
+        <header>
+            <h1>Chatroom</h1>
+            <p><a href="/login.html">Login/Register</a></p>
+        </header>
+        <div id="chatMessages" class="chat-messages">
+            <!-- Messages will be loaded here -->
+        </div>
+        <form id="messageForm" class="message-form">
+            <div>
+                <label for="chatUsername">Your Name:</label>
+                <input type="text" id="chatUsername" placeholder="Enter your name" required>
+            </div>
+            <div>
+                <label for="messageInput">Message:</label>
+                <input type="text" id="messageInput" placeholder="Type your message..." required>
+            </div>
+            <button type="submit">Send</button>
+        </form>
+        <p id="responseMessage" class="message"></p>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>

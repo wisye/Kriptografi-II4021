@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS messages;
+
+CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL
+);
+
+CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
