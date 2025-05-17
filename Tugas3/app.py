@@ -7,6 +7,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import List
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
+from cryptography.hazmat.primitives import serialization
+from passlib.hash import bcrypt 
 
 DATABASE = "chatroom.db"
 app = FastAPI()
@@ -17,13 +22,17 @@ class UserCreate(BaseModel):
         password : str
 
 class MessageCreate(BaseModel):
-        username : str
+        sender_usn : str
+        receiver_usn : str
         content : str
 
 class MessageResponse(BaseModel):
         id : int
-        username : str
+        sender_usn : str
+        receiver_usn : str
         content : str
+        hashed_content : str
+        signature : str
         timestamp : datetime.datetime
 
 def get_db():
@@ -59,7 +68,24 @@ def api_register(user_data: UserCreate, db: sqlite3.Connection = Depends(get_db)
         if user:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
         
-        db.execute("INSERT INTO users (username, password) VALUES (?, ?)", (user_data.username, user_data.password))
+        # Hash the password
+        hashed_pass = bcrypt.hash(user_data.password)
+
+        # Generate ECDSA key pair
+        private_key = ec.generate_private_key(ec.SECP256R1())
+        public_key = private_key.public_key()
+
+        serialized_private = private_key.private_bytes( 
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()       
+        )
+        serialized_public = public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        
+        db.execute("INSERT INTO users (username, hashed_pass, private_key, public_key) VALUES (?, ?)", (user_data.username, hashed_pass, serialized_private, serialized_public))
         db.commit()
         return {"message": "User registered"}
 
@@ -70,7 +96,7 @@ async def api_login(username: str = Form(...),
         
         def _login_db_call():
                 user = db.execute("SELECT id, username, password FROM users WHERE username = ?", (username,)).fetchone()
-                if not user or not user["password"] == password:
+                if not user or not bcrypt.verify(password, user["hashed_pass"]):
                         return None
                 return {"id": user["id"], "username": user["username"]}
         
@@ -79,6 +105,17 @@ async def api_login(username: str = Form(...),
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
         
         return {"message": "Login successful", "user": user_info}
+
+@app.get("/api/users", response_model=List[str])
+async def get_users(db: sqlite3.Connection = Depends(get_db)):  
+        def _get_users_db_call():
+                users_cursor = db.execute(
+                        'SELECT username FROM users ORDER BY username ASC LIMIT 100'
+                )
+                return users_cursor.fetchall()
+        
+        users_rows = await run_in_threadpool(_get_users_db_call)
+        return [dict(user) for user in users_rows]
 
 @app.get("/api/messages", response_model=List[MessageResponse])
 async def get_messages(db: sqlite3.Connection = Depends(get_db)):
@@ -94,18 +131,34 @@ async def get_messages(db: sqlite3.Connection = Depends(get_db)):
 
 @app.post("/api/messages", response_model=MessageResponse)
 async def create_message(message: MessageCreate, db: sqlite3.Connection = Depends(get_db)):
-        if not message.username.strip() or not message.content.strip():
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and message cannot be empty")
+        if not message.receiver_usn.strip() or not message.content.strip():
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Recipient and message cannot be empty")
         
+        hash = hashes.Hash(hashes.SHA3_256())
+        hash.update(message.content.encode('utf-8'))
+        hashed_content = hash.finalize().hex()
+
+        def _get_user_private_key():
+                user = db.execute("SELECT private_key FROM users WHERE username = ?", (message.sender_usn,)).fetchone()
+                if not user:
+                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+                return serialization.load_pem_private_key(user["private_key"], password=None)
+        
+        
+        private_key = await run_in_threadpool(_get_user_private_key)
+        if not private_key:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Private key not found")
+        signature = private_key.sign(hashed_content, ec.ECDSA(hashes.SHA3_256())).hex() 
+
         def _create_message_db_call():
                 cursor = db.execute(
-                        "INSERT INTO messages (username, content) VALUES (?, ?)",
-                        (message.username, message.content)
+                        "INSERT INTO messages (sender_usn, receiver_usn, content, hashed_content, signature) VALUES (?, ?, ?)",
+                        (message.sender_usn, message.receiver_usn, message.content, hashed_content, signature)
                 )
                 db.commit()
                 message_id = cursor.lastrowid
                 created_message = db.execute(
-                        'SELECT id, username, content, timestamp FROM messages WHERE id = ?', (message_id,)
+                        'SELECT id, sender_usn, receiver_usn, content, hashed_content, timestamp FROM messages WHERE id = ?', (message_id,)
                 ).fetchone()
                 if not create_message:
                         return None
