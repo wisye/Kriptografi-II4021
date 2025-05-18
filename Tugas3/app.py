@@ -105,7 +105,7 @@ async def api_login(username: str = Form(...),
         
         def _login_db_call():
                 user = db.execute("SELECT id, username, password FROM users WHERE username = ?", (username,)).fetchone()
-                if not user or not bcrypt.verify(password, user["hashed_pass"]):
+                if not user or not bcrypt.verify(password, user["password"]):
                         return None
                 return {"id": user["id"], "username": user["username"]}
         
@@ -116,11 +116,11 @@ async def api_login(username: str = Form(...),
         return {"message": "Login successful", "user": user_info}
 
 @app.get("/api/users", response_model=List[UserResponse])
-async def get_users(db: sqlite3.Connection = Depends(get_db)):  
+async def get_users(user: str, db: sqlite3.Connection = Depends(get_db)):  
         """Retrieve all users except the logged-in user"""
         def _get_users_db_call():
                 users_cursor = db.execute(
-                        'SELECT id, username, public_key_x, public_key_y FROM users WHERE username != ?", (username,)'
+                        'SELECT id, username, public_key_x, public_key_y FROM users WHERE username != ?', (user,)
                 )
                 return users_cursor.fetchall()
 
@@ -136,7 +136,7 @@ async def get_messages(sender: str, receiver: str, db: sqlite3.Connection = Depe
                         SELECT id, sender, receiver, content, content_hash, signature_r, signature_s, timestamp 
                         FROM messages 
                         WHERE (sender = ? AND receiver = ?) OR (sender = ? AND receiver = ?)
-                        ORDER BY timestamp DESC
+                        ORDER BY timestamp ASC
                         """, (sender, receiver, receiver, sender)
                 )
                 return messages_cursor.fetchall()
