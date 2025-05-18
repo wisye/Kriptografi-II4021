@@ -122,7 +122,7 @@ export default function Chatroom() {
       alert("Private key not found.");
       return;
     }
-
+    console.log("Private key:", privKey);
     const normalized = normalizeContent(content);
     const hash = hashMessage(normalized);
     const { r, s } = signMessage(normalized, privKey);
@@ -135,7 +135,7 @@ export default function Chatroom() {
       signature_r: r,
       signature_s: s,
     };
-
+    console.log("Message to send:", msg);
     try {
       const res = await api.post("/api/messages", msg);
       const data: Message = res.data;

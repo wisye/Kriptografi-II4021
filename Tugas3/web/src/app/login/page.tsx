@@ -45,7 +45,7 @@ export default function LoginPage() {
           "Register first to get private key"
         );
       }
-
+      
       setSuccess("Login berhasil! Mengalihkan...");
       setTimeout(() => router.push(redirectTarget), 300);
     } catch (err: any) {
