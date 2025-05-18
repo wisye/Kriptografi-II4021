@@ -5,6 +5,7 @@ from fastapi import FastAPI, Form, HTTPException, Depends, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 from cryptography.hazmat.primitives import hashes
@@ -15,24 +16,45 @@ from passlib.hash import bcrypt
 
 DATABASE = "chatroom.db"
 app = FastAPI()
+# TODO: To be edited kalo pindah ke NextJS
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class UserCreate(BaseModel):
         username : str
         password : str
+        public_key_x : str
+        public_key_y : str
+
+class UserResponse(BaseModel):
+        id : int
+        username : str
+        public_key_x : str
+        public_key_y : str
 
 class MessageCreate(BaseModel):
-        sender_usn : str
-        receiver_usn : str
+        sender : str
+        receiver : str
         content : str
+        content_hash: str
+        signature_r: str
+        signature_s: str
 
 class MessageResponse(BaseModel):
         id : int
-        sender_usn : str
-        receiver_usn : str
+        sender : str
+        receiver : str
         content : str
-        hashed_content : str
-        signature : str
+        content_hash: str
+        signature_r: str
+        signature_s: str
         timestamp : datetime.datetime
 
 def get_db():
@@ -61,6 +83,7 @@ async def startup_event():
 
 @app.post("/api/register")
 def api_register(user_data: UserCreate, db: sqlite3.Connection = Depends(get_db)):
+        """Register a new user"""
         if not user_data.username or not user_data.password:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and password are required")
 
@@ -68,24 +91,9 @@ def api_register(user_data: UserCreate, db: sqlite3.Connection = Depends(get_db)
         if user:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
         
-        # Hash the password
         hashed_pass = bcrypt.hash(user_data.password)
-
-        # Generate ECDSA key pair
-        private_key = ec.generate_private_key(ec.SECP256R1())
-        public_key = private_key.public_key()
-
-        serialized_private = private_key.private_bytes( 
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption()       
-        )
-        serialized_public = public_key.public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
         
-        db.execute("INSERT INTO users (username, hashed_pass, private_key, public_key) VALUES (?, ?)", (user_data.username, hashed_pass, serialized_private, serialized_public))
+        db.execute("INSERT INTO users (username, password, public_key_x, public_key_y) VALUES (?, ?, ?, ?)", (user_data.username, hashed_pass, user_data.public_key_x, user_data.public_key_y))
         db.commit()
         return {"message": "User registered"}
 
@@ -93,6 +101,7 @@ def api_register(user_data: UserCreate, db: sqlite3.Connection = Depends(get_db)
 async def api_login(username: str = Form(...),
                     password: str = Form(...),
                     db: sqlite3.Connection = Depends(get_db)):
+        """Login user and return user info"""
         
         def _login_db_call():
                 user = db.execute("SELECT id, username, password FROM users WHERE username = ?", (username,)).fetchone()
@@ -106,23 +115,29 @@ async def api_login(username: str = Form(...),
         
         return {"message": "Login successful", "user": user_info}
 
-@app.get("/api/users", response_model=List[str])
+@app.get("/api/users", response_model=List[UserResponse])
 async def get_users(db: sqlite3.Connection = Depends(get_db)):  
+        """Retrieve all users except the logged-in user"""
         def _get_users_db_call():
                 users_cursor = db.execute(
-                        'SELECT username FROM users ORDER BY username ASC LIMIT 100'
+                        'SELECT id, username, public_key_x, public_key_y FROM users WHERE username != ?", (username,)'
                 )
                 return users_cursor.fetchall()
-        
-        users_rows = await run_in_threadpool(_get_users_db_call)
-        return [dict(user) for user in users_rows]
 
-@app.get("/api/messages", response_model=List[MessageResponse])
-async def get_messages(db: sqlite3.Connection = Depends(get_db)):
-        
+        users_rows = await run_in_threadpool(_get_users_db_call)
+        return [UserResponse(**dict(user)) for user in users_rows]
+
+@app.get("/api/messages/{sender}/{receiver}", response_model=List[MessageResponse])
+async def get_messages(sender: str, receiver: str, db: sqlite3.Connection = Depends(get_db)):
+        """Retrieve messages between two users"""
         def _get_messages_db_call():
                 messages_cursor = db.execute(
-                        'SELECT id, username, content, timestamp FROM messages ORDER BY timestamp ASC LIMIT 100'
+                        """
+                        SELECT id, sender, receiver, content, content_hash, signature_r, signature_s, timestamp 
+                        FROM messages 
+                        WHERE (sender = ? AND receiver = ?) OR (sender = ? AND receiver = ?)
+                        ORDER BY timestamp DESC
+                        """, (sender, receiver, receiver, sender)
                 )
                 return messages_cursor.fetchall()
         
@@ -131,34 +146,19 @@ async def get_messages(db: sqlite3.Connection = Depends(get_db)):
 
 @app.post("/api/messages", response_model=MessageResponse)
 async def create_message(message: MessageCreate, db: sqlite3.Connection = Depends(get_db)):
-        if not message.receiver_usn.strip() or not message.content.strip():
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Recipient and message cannot be empty")
-        
-        hash = hashes.Hash(hashes.SHA3_256())
-        hash.update(message.content.encode('utf-8'))
-        hashed_content = hash.finalize().hex()
-
-        def _get_user_private_key():
-                user = db.execute("SELECT private_key FROM users WHERE username = ?", (message.sender_usn,)).fetchone()
-                if not user:
-                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-                return serialization.load_pem_private_key(user["private_key"], password=None)
-        
-        
-        private_key = await run_in_threadpool(_get_user_private_key)
-        if not private_key:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Private key not found")
-        signature = private_key.sign(hashed_content, ec.ECDSA(hashes.SHA3_256())).hex() 
+        """Create a new message"""
+        if not all([message.sender.strip(), message.receiver.strip(), message.content.strip(), message.content_hash.strip(), message.signature_r.strip(), message.signature_s.strip()]):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Any fields in the message cannot be empty")
 
         def _create_message_db_call():
                 cursor = db.execute(
-                        "INSERT INTO messages (sender_usn, receiver_usn, content, hashed_content, signature) VALUES (?, ?, ?)",
-                        (message.sender_usn, message.receiver_usn, message.content, hashed_content, signature)
+                        "INSERT INTO messages (sender, receiver, content, content_hash, signature_r, signature_s) VALUES (?, ?, ?, ?, ?, ?)",
+                        (message.sender, message.receiver, message.content, message.content_hash, message.signature_r, message.signature_s)
                 )
                 db.commit()
                 message_id = cursor.lastrowid
                 created_message = db.execute(
-                        'SELECT id, sender_usn, receiver_usn, content, hashed_content, timestamp FROM messages WHERE id = ?', (message_id,)
+                        'SELECT id, sender, receiver, content, content_hash, signature_r, signature_s, timestamp FROM messages WHERE id = ?', (message_id,)
                 ).fetchone()
                 if not create_message:
                         return None
