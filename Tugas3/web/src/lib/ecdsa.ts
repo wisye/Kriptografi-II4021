@@ -14,7 +14,8 @@ export const generateKeyPair = () => {
 
 export const signMessage = (message: string, privKeyHex: string) => {
   const key = ec.keyFromPrivate(privKeyHex, "hex");
-  const hash = sha3_256(message);
+  const normalized = normalizeContent(message);
+  const hash = sha3_256(normalized);
   const signature = key.sign(hash);
   return {
     r: signature.r.toString("hex"),
@@ -34,4 +35,8 @@ export const verifySignature = (
   return key.verify(hash, { r, s });
 };
 
-export const hashMessage = (message: string) => sha3_256(message);
+export const hashMessage = (message: string) =>
+  sha3_256(normalizeContent(message));
+
+export const normalizeContent = (text: string) =>
+  text.trim().replace(/\r\n/g, "\n"); 

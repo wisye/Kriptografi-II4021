@@ -8,6 +8,7 @@ import {
   signMessage,
   verifySignature,
   hashMessage,
+  normalizeContent,
 } from "@/lib/ecdsa";
 
 interface User {
@@ -51,39 +52,40 @@ export default function Chatroom() {
   }, [currentUser]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !target) return;
 
-    const sessionToken = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith("session_token="))
-      ?.split("=")[1];
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.get(`/api/messages/${currentUser.id}/${target.id}`);
+        const data: Message[] = res.data;
 
-    if (!sessionToken) return;
+        const verified = data.map((msg) => {
+          const senderUser =
+            msg.sender === currentUser.id ? currentUser : target;
 
-    const ws = new WebSocket(
-      `ws://localhost:8000/ws/${currentUser.id}?token=${sessionToken}`
-    );
+          const isHashEqual = hashMessage(msg.content) === msg.content_hash;
+          const isSignatureValid = verifySignature(
+            msg.content,
+            msg.signature_r,
+            msg.signature_s,
+            senderUser!.public_key_x,
+            senderUser!.public_key_y
+          );
 
-    ws.onmessage = async (event) => {
-      const msg = JSON.parse(event.data);
-      const { sender, content, content_hash, signature_r, signature_s } = msg;
-      const senderUser = users.find((u) => u.id === sender);
-      if (!senderUser) return;
+          return {
+            ...msg,
+            verified: isHashEqual && isSignatureValid,
+          };
+        });
 
-      const valid = verifySignature(
-        content,
-        signature_r,
-        signature_s,
-        senderUser.public_key_x,
-        senderUser.public_key_y
-      );
+        setMessages(verified);
+      } catch (err) {
+        console.error("Polling failed:", err);
+      }
+    }, 2000);
 
-      setMessages((prev) => [...prev, { ...msg, verified: valid }]);
-    };
-
-    wsRef.current = ws;
-    return () => ws.close();
-  }, [currentUser, users]);
+    return () => clearInterval(interval);
+  }, [currentUser, target]);
 
   const loadMessages = async (user: User) => {
     setTarget(user);
@@ -93,43 +95,56 @@ export default function Chatroom() {
     const verified = data.map((msg) => {
       const senderUser =
         msg.sender === currentUser?.id ? currentUser : user;
-      const valid = verifySignature(
+
+      const isHashEqual = hashMessage(msg.content) === msg.content_hash;
+      const isSignatureValid = verifySignature(
         msg.content,
         msg.signature_r,
         msg.signature_s,
         senderUser!.public_key_x,
         senderUser!.public_key_y
       );
-      return { ...msg, verified: valid };
+
+      return {
+        ...msg,
+        verified: isHashEqual && isSignatureValid,
+      };
     });
 
     setMessages(verified);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!content.trim() || !currentUser || !target) return;
 
-    const hash = hashMessage(content);
     const privKey = localStorage.getItem("privateKey");
     if (!privKey) {
       alert("Private key not found.");
       return;
     }
 
-    const { r, s } = signMessage(content, privKey);
+    const normalized = normalizeContent(content);
+    const hash = hashMessage(normalized);
+    const { r, s } = signMessage(normalized, privKey);
 
-    const msg: Message = {
+    const msg: Omit<Message, "id" | "verified"> = {
       sender: currentUser.id,
       receiver: target.id,
-      content,
+      content: normalized,
       content_hash: hash,
       signature_r: r,
       signature_s: s,
     };
 
-    wsRef.current?.send(JSON.stringify(msg));
-    setMessages((prev) => [...prev, { ...msg, verified: true }]);
-    setContent("");
+    try {
+      const res = await api.post("/api/messages", msg);
+      const data: Message = res.data;
+      setMessages((prev) => [...prev, { ...data, verified: true }]);
+      setContent("");
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to send message.");
+    }
   };
 
   return (

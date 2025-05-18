@@ -18,7 +18,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://103.59.160.119:3000"], # dev
+    allow_origins=["http://localhost:3000"], # dev
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -263,6 +263,7 @@ async def get_users(db: sqlite3.Connection = Depends(get_db), current_user: dict
 
 @app.get("/api/messages/{user_1}/{user_2}", response_model=List[MessageResponse])
 async def get_messages(user_1: int, user_2: int, db: sqlite3.Connection = Depends(get_db), current_user: dict = Depends(auth)):
+        
         """Retrieve messages between two users"""
         if user_1 != current_user["id"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
@@ -284,12 +285,14 @@ async def get_messages(user_1: int, user_2: int, db: sqlite3.Connection = Depend
 @app.post("/api/messages", response_model=MessageResponse)
 async def create_message(message: MessageCreate, db: sqlite3.Connection = Depends(get_db), current_user: dict = Depends(auth)):
         """Create a new message"""
+
         if message.sender != current_user["id"]:
                 raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN, 
                         detail="You can only send messages as yourself"
                 )
-
+        
+        
         if not all([message.sender, message.receiver, message.content.strip(), message.content_hash.strip(), message.signature_r.strip(), message.signature_s.strip()]):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Any fields in the message cannot be empty")
 
