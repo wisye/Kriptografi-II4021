@@ -5,11 +5,10 @@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="flex flex-col items-center justify-center h-screen">
+    <div className="flex items-center justify-center h-screen">
       <Card className="w-full max-w-md">
         <CardHeader><CardTitle className="flex items-center justify-center text-3xl">Login</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -17,10 +16,6 @@ export default function Home() {
           <Input type="password" placeholder="Password" />
           <Button>Login</Button>
         </CardContent>
-      </Card>
-      <Card className="w-full max-w-md mt-4">
-        <Link href="/register" className="flex text-red items-center justify-center text-3xl">Register</Link>
-        <Link href="/chatroom" className="flex items-center justify-center text-3xl">Chatroom</Link>
       </Card>
     </div>
   );
