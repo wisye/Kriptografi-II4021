@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import List
+from typing import List, Dict
 from passlib.hash import bcrypt
 from datetime import datetime, timedelta
 import json
@@ -21,9 +21,9 @@ security = HTTPBearer(auto_error=False)
 
 class ConnectionManager:
         def __init__(self):
-                self.active_connections: Dict[int, WebSocket] = []
+                self.active_connections: Dict[int, WebSocket] = {}
         
-        async def connect(self, websocket: WebSocket):
+        async def connect(self, websocket: WebSocket, user_id: int):
                 await websocket.accept()
                 self.active_connections[user_id] = websocket
         
@@ -253,7 +253,7 @@ async def get_users(user_id: int, db: sqlite3.Connection = Depends(get_db)):
 @app.get("/api/messages/{user_1}/{user_2}", response_model=List[MessageResponse])
 async def get_messages(user_1: int, user_2: int, db: sqlite3.Connection = Depends(get_db), current_user: dict = Depends(auth)):
         """Retrieve messages between two users"""
-        if user_1 != current_user["user_id"]:
+        if user_1 != current_user["id"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
         
         def _get_messages_db_call():
@@ -286,7 +286,7 @@ async def create_message(message: MessageCreate, db: sqlite3.Connection = Depend
                 created_message = db.execute(
                         'SELECT id, sender, receiver, content, content_hash, signature_r, signature_s, timestamp FROM messages WHERE id = ?', (message_id,)
                 ).fetchone()
-                if not create_message:
+                if not created_message:
                         return None
                 return MessageResponse(**dict(created_message))
 
@@ -297,17 +297,32 @@ async def create_message(message: MessageCreate, db: sqlite3.Connection = Depend
 
 # WebSocket
 @app.websocket("/ws/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: int):
-    await manager.connect(websocket, user_id)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-            recipient = message_data.get("receiver")
-            await manager.send_personal_message(data, recipient)
-            await save_message(message_data)
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
+async def websocket_endpoint(websocket: WebSocket, user_id: int, db: sqlite3.Connection = Depends(get_db)):
+        """WebSocket endpoint for real-time messaging"""
+        await manager.connect(websocket, user_id)
+        try:
+                while True:
+                        data = await websocket.receive_text()
+                        message_data = json.loads(data)
+
+                        # Save message to the database
+                        message_obj = MessageCreate(
+                                sender=message_data["sender"],
+                                receiver=message_data["receiver"],
+                                content=message_data["content"],
+                                content_hash=message_data["content_hash"],
+                                signature_r=message_data["signature_r"],
+                                signature_s=message_data["signature_s"]
+                        )
+                        await create_message(message_obj, db)
+
+                        # Send message to the intended recipient
+                        recipient = message_data["receiver"]
+                        if recipient in manager.active_connections:
+                                await manager.send_personal_message(data, recipient)
+
+        except WebSocketDisconnect:
+                manager.disconnect(user_id)
 
 @app.get("/{path:path}")
 async def serve_static_or_index(path: str):
