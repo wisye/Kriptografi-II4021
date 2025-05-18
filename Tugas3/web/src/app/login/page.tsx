@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import axios from "axios";
+import api from "@/lib/api";
 import { sha3_256 } from "js-sha3";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,6 @@ export default function LoginPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const router = useRouter();
-
   const redirectTarget = "/chatroom";
 
   const handleLogin = async () => {
@@ -31,18 +30,23 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-
       const pwdHash = sha3_256(password);
       const form = new URLSearchParams();
       form.append("username", username);
       form.append("password", pwdHash);
 
-      await axios.post("http://localhost:8000/api/login", form, {
+      await api.post("/api/login", form, {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        withCredentials: true,
       });
 
-      setSuccess("Login successful! Redirecting…");
+      
+      if (!localStorage.getItem("privateKey")) {
+        alert(
+          "Register first to get private key"
+        );
+      }
+
+      setSuccess("Login berhasil! Mengalihkan...");
       setTimeout(() => router.push(redirectTarget), 300);
     } catch (err: any) {
       const status = err.response?.status;
@@ -53,7 +57,7 @@ export default function LoginPage() {
         return;
       }
 
-      setError(detail || "Error!");
+      setError(detail || "Terjadi kesalahan.");
     } finally {
       setLoading(false);
     }
