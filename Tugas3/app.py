@@ -239,8 +239,10 @@ async def logout(
         return {"message: Logout succesful"}
                 
 @app.get("/api/users", response_model=List[UserResponse])
-async def get_users(user_id: int, db: sqlite3.Connection = Depends(get_db)):  
+async def get_users(db: sqlite3.Connection = Depends(get_db), current_user: dict = Depends(auth)):  
         """Retrieve all users except the logged-in user"""
+        user_id = current_user["id"]
+        
         def _get_users_db_call():
                 users_cursor = db.execute(
                         'SELECT id, username, public_key_x, public_key_y FROM users WHERE id != ?', (user_id,)
@@ -271,8 +273,14 @@ async def get_messages(user_1: int, user_2: int, db: sqlite3.Connection = Depend
         return [MessageResponse(**dict(msg)) for msg in messages_rows]
 
 @app.post("/api/messages", response_model=MessageResponse)
-async def create_message(message: MessageCreate, db: sqlite3.Connection = Depends(get_db)):
+async def create_message(message: MessageCreate, db: sqlite3.Connection = Depends(get_db), current_user: dict = Depends(auth)):
         """Create a new message"""
+        if message.sender != current_user["id"]:
+                raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, 
+                        detail="You can only send messages as yourself"
+                )
+
         if not all([message.sender, message.receiver, message.content.strip(), message.content_hash.strip(), message.signature_r.strip(), message.signature_s.strip()]):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Any fields in the message cannot be empty")
 
@@ -299,11 +307,61 @@ async def create_message(message: MessageCreate, db: sqlite3.Connection = Depend
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: int, db: sqlite3.Connection = Depends(get_db)):
         """WebSocket endpoint for real-time messaging"""
+        # Extract session token
+        cookies = {}
+        if "cookie" in websocket.headers:
+                cookie_str = websocket.headers.get("cookie")
+                cookie_pairs = cookie_str.split("; ")
+                for pair in cookie_pairs:
+                        if "=" in pair:
+                                key, value = pair.split("=", 1)
+                                cookies[key] = value
+        
+        # Get token from query params OR cookies
+        session_token = websocket.query_params.get("token") or cookies.get("session_token")
+        if not session_token:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        
+        # Validate session token
+        def _validate_session_token():
+                session_row = db.execute(
+                        """SELECT s.user_id, u.username, u.public_key_x, u.public_key_y, s.expires_at
+                        FROM sessions s
+                        JOIN users u ON s.user_id = u.id
+                        WHERE s.session_token = ? AND datetime(s.expires_at) > datetime('now')
+                        """, (session_token,)).fetchone()
+                
+                if not session_row:
+                        return None
+                
+                return {
+                        "id": session_row["user_id"],
+                        "username": session_row["username"],
+                        "public_key_x": session_row["public_key_x"],
+                        "public_key_y": session_row["public_key_y"]
+                }
+        user = await run_in_threadpool(_validate_session_token)
+        if not user or user["id"] != user_id:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        
+        # Check if user is already connected
+        if user_id in manager.active_connections:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        
+        # Accept the WebSocket connection
         await manager.connect(websocket, user_id)
         try:
                 while True:
                         data = await websocket.receive_text()
                         message_data = json.loads(data)
+
+                        if int(message_data["sender"]) != user_id:
+                                error_message = json.dumps({"error": "You can only send messages as yourself"})
+                                await websocket.send_text(error_message)
+                                continue
 
                         # Save message to the database
                         message_obj = MessageCreate(
@@ -314,8 +372,26 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int, db: sqlite3.Con
                                 signature_r=message_data["signature_r"],
                                 signature_s=message_data["signature_s"]
                         )
-                        await create_message(message_obj, db)
 
+                        def _create_message_db_call():
+                                cursor = db.execute(
+                                        "INSERT INTO messages (sender, receiver, content, content_hash, signature_r, signature_s) VALUES (?, ?, ?, ?, ?, ?)",
+                                        (message_obj.sender, message_obj.receiver, message_obj.content, message_obj.content_hash, message_obj.signature_r, message_obj.signature_s)
+                                )
+                                db.commit()
+                                message_id = cursor.lastrowid
+                                created_message = db.execute(
+                                        'SELECT id, sender, receiver, content, content_hash, signature_r, signature_s FROM messages WHERE id = ?', (message_id,)
+                                ).fetchone()
+                                if not created_message:
+                                        return None
+                                return MessageResponse(**dict(created_message))
+                        create_message_response = await run_in_threadpool(_create_message_db_call)
+                        if create_message_response is None:
+                                error_message = json.dumps({"error": "Could not save message to database"})
+                                await websocket.send_text(error_message)
+                                continue
+                        
                         # Send message to the intended recipient
                         recipient = message_data["receiver"]
                         if recipient in manager.active_connections:
