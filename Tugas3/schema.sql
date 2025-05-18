@@ -11,13 +11,15 @@ CREATE TABLE users (
 
 CREATE TABLE messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        sender TEXT NOT NULL,
-        receiver TEXT NOT NULL,
+        sender INTEGER NOT NULL,
+        receiver INTEGER NOT NULL,
         content TEXT NOT NULL,
         content_hash TEXT NOT NULL,
         signature_r TEXT NOT NULL,
         signature_s TEXT NOT NULL,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (sender) REFERENCES users (id),
+        FOREIGN KEY (receiver) REFERENCES users (id)
 );
 
 DROP TABLE IF EXISTS sessions;

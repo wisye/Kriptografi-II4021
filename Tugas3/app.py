@@ -1,8 +1,7 @@
 import sqlite3
 import os
-import datetime
 import secrets
-from fastapi import FastAPI, Form, HTTPException, Depends, Request, status
+from fastapi import FastAPI, Form, HTTPException, Depends, Request, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
@@ -10,12 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
-from cryptography.hazmat.primitives import serialization
-from passlib.hash import bcrypt 
+from passlib.hash import bcrypt
 from datetime import datetime, timedelta
+import json
 
 DATABASE = "chatroom.db"
 app = FastAPI()
@@ -23,13 +19,23 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 security = HTTPBearer(auto_error=False)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+class ConnectionManager:
+        def __init__(self):
+                self.active_connections: Dict[int, WebSocket] = []
+        
+        async def connect(self, websocket: WebSocket):
+                await websocket.accept()
+                self.active_connections[user_id] = websocket
+        
+        def disconnect(self, user_id: int):
+                if user_id in self.active_connections:
+                        del self.active_connections[user_id]
+
+        async def send_personal_message(self, message: str, user_id: int):
+                if user_id in self.active_connections:
+                        await self.active_connections[user_id].send_text(message)
+
+manager = ConnectionManager()
 
 class UserCreate(BaseModel):
         username : str
@@ -44,8 +50,8 @@ class UserResponse(BaseModel):
         public_key_y : str
 
 class MessageCreate(BaseModel):
-        sender : str
-        receiver : str
+        sender : int
+        receiver : int
         content : str
         content_hash: str
         signature_r: str
@@ -53,13 +59,13 @@ class MessageCreate(BaseModel):
 
 class MessageResponse(BaseModel):
         id : int
-        sender : str
-        receiver : str
+        sender : int
+        receiver : int
         content : str
         content_hash: str
         signature_r: str
         signature_s: str
-        timestamp : datetime.datetime
+        timestamp : datetime
 
 def get_db():
         db = sqlite3.connect(DATABASE, check_same_thread=False)
@@ -233,21 +239,21 @@ async def logout(
         return {"message: Logout succesful"}
                 
 @app.get("/api/users", response_model=List[UserResponse])
-async def get_users(user: str, db: sqlite3.Connection = Depends(get_db)):  
+async def get_users(user_id: int, db: sqlite3.Connection = Depends(get_db)):  
         """Retrieve all users except the logged-in user"""
         def _get_users_db_call():
                 users_cursor = db.execute(
-                        'SELECT id, username, public_key_x, public_key_y FROM users WHERE username != ?', (user,)
+                        'SELECT id, username, public_key_x, public_key_y FROM users WHERE id != ?', (user_id,)
                 )
                 return users_cursor.fetchall()
 
         users_rows = await run_in_threadpool(_get_users_db_call)
         return [UserResponse(**dict(user)) for user in users_rows]
 
-@app.get("/api/messages/{sender}/{receiver}", response_model=List[MessageResponse])
-async def get_messages(sender: str, receiver: str, db: sqlite3.Connection = Depends(get_db), current_user: dict = Depends(auth)):
+@app.get("/api/messages/{user_1}/{user_2}", response_model=List[MessageResponse])
+async def get_messages(user_1: int, user_2: int, db: sqlite3.Connection = Depends(get_db), current_user: dict = Depends(auth)):
         """Retrieve messages between two users"""
-        if sender != current_user["username"]:
+        if user_1 != current_user["user_id"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
         
         def _get_messages_db_call():
@@ -257,7 +263,7 @@ async def get_messages(sender: str, receiver: str, db: sqlite3.Connection = Depe
                         FROM messages 
                         WHERE (sender = ? AND receiver = ?) OR (sender = ? AND receiver = ?)
                         ORDER BY timestamp ASC
-                        """, (sender, receiver, receiver, sender)
+                        """, (user_1, user_2, user_2, user_1)
                 )
                 return messages_cursor.fetchall()
         
@@ -267,7 +273,7 @@ async def get_messages(sender: str, receiver: str, db: sqlite3.Connection = Depe
 @app.post("/api/messages", response_model=MessageResponse)
 async def create_message(message: MessageCreate, db: sqlite3.Connection = Depends(get_db)):
         """Create a new message"""
-        if not all([message.sender.strip(), message.receiver.strip(), message.content.strip(), message.content_hash.strip(), message.signature_r.strip(), message.signature_s.strip()]):
+        if not all([message.sender, message.receiver, message.content.strip(), message.content_hash.strip(), message.signature_r.strip(), message.signature_s.strip()]):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Any fields in the message cannot be empty")
 
         def _create_message_db_call():
@@ -288,6 +294,20 @@ async def create_message(message: MessageCreate, db: sqlite3.Connection = Depend
         if create_message_response is None:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not retrieve created message")
         return create_message_response
+
+# WebSocket
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: int):
+    await manager.connect(websocket, user_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            message_data = json.loads(data)
+            recipient = message_data.get("receiver")
+            await manager.send_personal_message(data, recipient)
+            await save_message(message_data)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 @app.get("/{path:path}")
 async def serve_static_or_index(path: str):
