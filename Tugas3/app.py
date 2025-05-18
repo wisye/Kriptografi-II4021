@@ -15,6 +15,15 @@ import json
 
 DATABASE = "chatroom.db"
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"], # dev
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # TODO: To be edited kalo pindah ke NextJS
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 security = HTTPBearer(auto_error=False)
