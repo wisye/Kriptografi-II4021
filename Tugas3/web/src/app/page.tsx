@@ -9,8 +9,8 @@ export default function Home() {
   const router = useRouter();
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-tr from-blue-300 to-white-500 p-6">
-      <Card className="w-full max-w-xl shadow-2xl">
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-tr from-blue-500 to-rose-500 p-6">
+      <Card className="w-full max-w-xl rounded-xl shadow-xl shadow-rose-500/20">
         <CardHeader>
           <CardTitle className="text-3xl text-center font-bold text-blue-600">
             Welcome to AxoSharkPing!
@@ -27,7 +27,7 @@ export default function Home() {
           <p className="text-center text-gray-600 max-w-md">
             A secure and fun messaging experience, protected by cryptography and inspired by the power of Axolotls, Sharks, and Penguins.
           </p>
-          <div className="flex gap-4">
+          <div className="flex flex-col gap-4 w-full max-w-sm">
             <Button variant="default" onClick={() => router.push("/login")}>Login</Button>
             <Button variant="outline" onClick={() => router.push("/register")}>Register</Button>
           </div>

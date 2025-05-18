@@ -53,9 +53,9 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-tr from-blue-300 to-white-500 p-6">
+    <div className="flex h-screen bg-gradient-to-tr from-blue-500 to-rose-500 p-6">
       <div className="w-1/3 border-r rounded-xl mx-2 overflow-y-auto p-4 bg-white">
-        <h2 className="font-bold text-2xl flex justify-center items-center mb-2">Contacts</h2>
+        <h2 className="font-bold text-3xl flex justify-center text-blue-600 items-center mb-2">Contacts</h2>
         {users.map((u) => (
           <div
             key={u.username}
@@ -68,11 +68,11 @@ export default function Home() {
         ))}
       </div>
       <div className="flex-1 flex flex-col p-4 mx-2 bg-white rounded-xl">
-        <div className="flex-1 overflow-y-auto border p-4 rounded space-y-2">
+        <div className="flex-1 overflow-y-auto border-2 p-4 rounded-md space-y-2">
           {messages.map((msg) => (
             <div
               key={msg.id}
-              className={`max-w-md p-2 rounded-xl break-words whitespace-pre-wrap ${
+              className={`max-w-md p-2 rounded-sm break-words border-2 whitespace-pre-wrap ${
                 msg.sender === "you" ? "ml-auto bg-blue-100 text-right" : "mr-auto bg-gray-100"
               }`}
             >
@@ -89,7 +89,7 @@ export default function Home() {
             onChange={e => setContent(e.target.value)}
             onKeyDown={handleKeyPress}
             placeholder="Type a message"
-            className="flex-1"
+            className="flex-1 rounded-md border-2"
           />
           <Button onClick={sendMessage}>Send</Button>
         </div>
