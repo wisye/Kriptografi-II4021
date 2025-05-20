@@ -18,7 +18,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://103.59.160.119:3000"], # dev
+    allow_origins=["http://localhost:3000"], # dev
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -179,14 +179,17 @@ async def api_login(username: str = Form(...),
                     db: sqlite3.Connection = Depends(get_db),
                     response: Response = None):
         """Login user and return user info"""
-        
+        print("Login attempt with username:", username)
+        print("Login attempt with password:", password)
         def _login_db_call():
                 user = db.execute("SELECT id, username, password, public_key_x, public_key_y FROM users WHERE username = ?", (username,)).fetchone()
                 if not user or not bcrypt.verify(password, user["password"]):
+                        print("Invalid username or password")
                         return None
                 
                 active_session = db.execute("SELECT session_token FROM sessions WHERE user_id = ? AND datetime(expires_at) > datetime('now')", (user["id"],)).fetchone()
                 if active_session:
+                        print("User already logged in")
                         return {"error": "already_logged_in"}
                 
                 session_token = create_session_token()

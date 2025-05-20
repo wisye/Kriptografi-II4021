@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-
+  const [privateKey, setPrivateKey] = useState<string | null>(null);
   const router = useRouter();
   const redirectTarget = "/chatroom";
 
@@ -24,7 +24,7 @@ export default function LoginPage() {
     setSuccess(null);
 
     if (!username.trim() || !password.trim()) {
-      setError("Username dan password wajib diisi.");
+      setError("Username or password can't be empty!");
       return;
     }
 
@@ -71,30 +71,39 @@ export default function LoginPage() {
             Login
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <Input
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <Button onClick={handleLogin} disabled={loading}>
-            {loading ? "Processing…" : "Login"}
-          </Button>
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-          {success && <p className="text-green-600 text-sm">{success}</p>}
-          <h3>
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-blue-600 hover:underline">
-              Register
-            </Link>
-          </h3>
+        <CardContent>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault(); // prevent page refresh
+              handleLogin();      // call your login function
+            }}
+            className="flex flex-col gap-4"
+          >
+            <Input
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <Button type="submit" disabled={loading}>
+              {loading ? "Processing…" : "Login"}
+            </Button>
+            {error && <p className="text-red-600 text-sm">{error}</p>}
+            {success && <p className="text-green-600 text-sm">{success}</p>}
+            <h3>
+              Don&apos;t have an account?{" "}
+              <Link href="/register" className="text-blue-600 hover:underline">
+                Register
+              </Link>
+            </h3>
+          </form>
         </CardContent>
+
       </Card>
     </div>
   );

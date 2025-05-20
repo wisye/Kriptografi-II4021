@@ -23,7 +23,7 @@ export default function RegisterPage() {
     setSuccess(null);
 
     if (!username.trim() || !password.trim()) {
-      setError("Username dan password wajib diisi.");
+      setError("Username or password can't be empty!");
       return;
     }
 
@@ -45,7 +45,7 @@ export default function RegisterPage() {
 
       const pwdHash = sha3_256(password);
 
-      await axios.post("http://103.59.160.119:8000/api/register", { // POST request
+      await axios.post("http://localhost:8000/api/register", { // POST request
         username,
         password: pwdHash,
         public_key_x: "0x" + xHex,
@@ -73,29 +73,36 @@ export default function RegisterPage() {
             Register
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <Input
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <Button onClick={handleRegister} disabled={loading}>
-            {loading ? "Processing…" : "Register"}
-          </Button>
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-          {success && <p className="text-green-600 text-sm">{success}</p>}
-          <h3>
-            Already have an account?{" "}
-            <Link href="/login" className="text-blue-600 hover:underline">
-              Login
-            </Link>
-          </h3>
+        <CardContent>
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleRegister();
+            }}
+            className="flex flex-col gap-4">
+            <Input
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <Button onClick={handleRegister} disabled={loading}>
+              {loading ? "Processing…" : "Register"}
+            </Button>
+            {error && <p className="text-red-600 text-sm">{error}</p>}
+            {success && <p className="text-green-600 text-sm">{success}</p>}
+            <h3>
+              Already have an account?{" "}
+              <Link href="/login" className="text-blue-600 hover:underline">
+                Login
+              </Link>
+            </h3>
+          </form>
         </CardContent>
       </Card>
     </div>
