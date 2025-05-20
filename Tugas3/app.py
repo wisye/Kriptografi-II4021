@@ -19,6 +19,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"], # dev
+#     allow_origins=["http://103.59.160.119:4121"] # prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -88,7 +89,6 @@ def init_db():
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
         
-        # Check if table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
         if cursor.fetchone() is None:
                 with open("schema.sql", "r") as f:
@@ -155,6 +155,7 @@ async def startup_event():
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         if not current_user:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        print("Current user:", current_user)
         return current_user
 
 @app.post("/api/register")
@@ -178,6 +179,7 @@ async def api_login(username: str = Form(...),
                     password: str = Form(...),
                     db: sqlite3.Connection = Depends(get_db),
                     response: Response = None):
+        
         """Login user and return user info"""
         print("Login attempt with username:", username)
         print("Login attempt with password:", password)
@@ -193,8 +195,9 @@ async def api_login(username: str = Form(...),
                         return {"error": "already_logged_in"}
                 
                 session_token = create_session_token()
+                print("Generated session token:", session_token)
                 expires_at = get_session_expiry()
-                
+                print("Session expires at:", expires_at)
                 db.execute(
                         "INSERT INTO sessions (user_id, session_token, expires_at) VALUES (?, ?, ?)",
                         (user["id"], session_token, expires_at)
@@ -216,6 +219,7 @@ async def api_login(username: str = Form(...),
         if user_info is None:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
         if "error" in user_info and user_info["error"] == "already_logged_in":
+                
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already logged in")
         
         response.set_cookie(
@@ -226,7 +230,9 @@ async def api_login(username: str = Form(...),
                 samesite="lax",
                 max_age=86400
         )
-        
+        print("======================")
+        print("User logged in successfully:", user_info)
+        print("======================")
         return {"message": "Login successful", "user": user_info["user"], "session_token": user_info["session_token"], "expires_at": user_info["expires_at"]}
 
 @app.post("/api/logout")
@@ -248,6 +254,9 @@ async def logout(
                 await run_in_threadpool(_logout_db_call)
         
         response.delete_cookie(key="session_token")
+        print("=======================")
+        print("User logged out successfully:", current_user)
+        print("=======================")
         return {"message: Logout succesful"}
                 
 @app.get("/api/users", response_model=List[UserResponse])
@@ -407,7 +416,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int, db: sqlite3.Con
                                 await websocket.send_text(error_message)
                                 continue
                         
-                        # Send message to the intended recipient
+
                         recipient = message_data["receiver"]
                         if recipient in manager.active_connections:
                                 await manager.send_personal_message(data, recipient)
@@ -422,12 +431,7 @@ async def serve_static_or_index(path: str):
         return FileResponse(os.path.join("static", "login.html"))
     if os.path.exists(static_file_path) and os.path.isfile(static_file_path):
         return FileResponse(static_file_path)
-    # Fallback for SPA-like behavior or if direct .html access is desired
     if not "." in path and os.path.exists(os.path.join("static", f"{path}.html")):
          return FileResponse(os.path.join("static", f"{path}.html"))
-    # If specific file not found, try serving login.html as a general fallback for undefined routes
-    # or raise 404 if you prefer stricter routing.
-    # For this simple case, let's try login.html or a 404.
-    # If you want any undefined path to go to login:
-    # return FileResponse(os.path.join("static", "login.html"))
+
     raise HTTPException(status_code=404, detail="Page not found")

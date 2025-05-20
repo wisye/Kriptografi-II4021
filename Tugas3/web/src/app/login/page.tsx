@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { sha3_256 } from "js-sha3";
@@ -8,6 +9,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
+
+
+interface User {
+  id: number;
+  username: string;
+  public_key_x: string;
+  public_key_y: string;
+}
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -18,6 +27,9 @@ export default function LoginPage() {
   const [privateKey, setPrivateKey] = useState<string | null>(null);
   const router = useRouter();
   const redirectTarget = "/chatroom";
+  const [authFailed, setAuthFailed] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
 
   const handleLogin = async () => {
     setError(null);
@@ -46,7 +58,7 @@ export default function LoginPage() {
         );
       }
       
-      setSuccess("Login berhasil! Mengalihkan...");
+      setSuccess("Login successful! Redirecting...");
       setTimeout(() => router.push(redirectTarget), 300);
     } catch (err: any) {
       const status = err.response?.status;
@@ -63,48 +75,77 @@ export default function LoginPage() {
     }
   };
 
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-tr from-blue-500 to-rose-500 p-6">
-      <Card className="w-full max-w-md rounded-xl shadow-rose-500/20 shadow-xl">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-center text-3xl font-bold text-blue-600">
-            Login
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault(); // prevent page refresh
-              handleLogin();      // call your login function
-            }}
-            className="flex flex-col gap-4"
-          >
-            <Input
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <Button type="submit" disabled={loading}>
-              {loading ? "Processing…" : "Login"}
+  useEffect(() => {
+    api
+      .get("/api/me")
+      .then((res) => setCurrentUser(res.data))
+      .catch(() => setAuthFailed(true));
+  }, []);
+  if (!authFailed) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-tr from-blue-500 to-rose-500 p-6">
+        <Card className="w-full max-w-md rounded-xl shadow-rose-500/20 shadow-xl">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-center text-3xl font-bold text-blue-600">
+              Login
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <h1 className="flex items-center my-8 justify-center text-red-600">You have already logged in!</h1>
+          <Link href="/chatroom">
+            <Button className="w-full flex items-center justify-center">
+              Go to Chatroom :D
             </Button>
-            {error && <p className="text-red-600 text-sm">{error}</p>}
-            {success && <p className="text-green-600 text-sm">{success}</p>}
-            <h3>
-              Don&apos;t have an account?{" "}
-              <Link href="/register" className="text-blue-600 hover:underline">
-                Register
-              </Link>
-            </h3>
-          </form>
-        </CardContent>
+          </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  } else {
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-tr from-blue-500 to-rose-500 p-6">
+          <Card className="w-full max-w-md rounded-xl shadow-rose-500/20 shadow-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-center text-3xl font-bold text-blue-600">
+                Login
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault(); // prevent page refresh
+                  handleLogin();      // call your login function
+                }}
+                className="flex flex-col gap-4"
+              >
+                <Input
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <Button type="submit" disabled={loading}>
+                  {loading ? "Processing…" : "Login"}
+                </Button>
+                {error && <p className="text-red-600 text-sm">{error}</p>}
+                {success && <p className="text-green-600 text-sm">{success}</p>}
+                <h3>
+                  Don&apos;t have an account?{" "}
+                  <Link href="/register" className="text-blue-600 hover:underline">
+                    Register
+                  </Link>
+                </h3>
+              </form>
+            </CardContent>
 
-      </Card>
-    </div>
-  );
+          </Card>
+        </div>
+      );
+    }
+   
 }

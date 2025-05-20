@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
@@ -35,20 +36,30 @@ export default function Chatroom() {
   const [target, setTarget] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [content, setContent] = useState("");
-
+  const [authFailed, setAuthFailed] = useState(false);
+  const router = useRouter();
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    api.get("/api/me")
+    api
+      .get("/api/me")
       .then((res) => setCurrentUser(res.data))
-      .catch(console.error);
+      .catch(() => setAuthFailed(true));
   }, []);
 
   useEffect(() => {
     if (!currentUser) return;
-    api.get("/api/users")
-      .then((res) => setUsers(res.data))
-      .catch(console.error);
+
+    const loadUsers = () => {
+      api
+        .get("/api/users")
+        .then((res) => setUsers(res.data))
+        .catch(console.error);
+    };
+
+    loadUsers();
+    const interval = setInterval(loadUsers, 3000);
+    return () => clearInterval(interval);
   }, [currentUser]);
 
   useEffect(() => {
@@ -60,22 +71,16 @@ export default function Chatroom() {
         const data: Message[] = res.data;
 
         const verified = data.map((msg) => {
-          const senderUser =
-            msg.sender === currentUser.id ? currentUser : target;
-
+          const senderUser = msg.sender === currentUser.id ? currentUser : target;
           const isHashEqual = hashMessage(msg.content) === msg.content_hash;
           const isSignatureValid = verifySignature(
             msg.content,
             msg.signature_r,
             msg.signature_s,
-            senderUser!.public_key_x,
-            senderUser!.public_key_y
+            senderUser.public_key_x,
+            senderUser.public_key_y
           );
-
-          return {
-            ...msg,
-            verified: isHashEqual && isSignatureValid,
-          };
+          return { ...msg, verified: isHashEqual && isSignatureValid };
         });
 
         setMessages(verified);
@@ -93,22 +98,16 @@ export default function Chatroom() {
     const data: Message[] = res.data;
 
     const verified = data.map((msg) => {
-      const senderUser =
-        msg.sender === currentUser?.id ? currentUser : user;
-
+      const senderUser = msg.sender === currentUser?.id ? currentUser : user;
       const isHashEqual = hashMessage(msg.content) === msg.content_hash;
       const isSignatureValid = verifySignature(
         msg.content,
         msg.signature_r,
         msg.signature_s,
-        senderUser!.public_key_x,
-        senderUser!.public_key_y
+        senderUser.public_key_x,
+        senderUser.public_key_y
       );
-
-      return {
-        ...msg,
-        verified: isHashEqual && isSignatureValid,
-      };
+      return { ...msg, verified: isHashEqual && isSignatureValid };
     });
 
     setMessages(verified);
@@ -122,7 +121,7 @@ export default function Chatroom() {
       alert("Private key not found.");
       return;
     }
-    console.log("Private key:", privKey);
+
     const normalized = normalizeContent(content);
     const hash = hashMessage(normalized);
     const { r, s } = signMessage(normalized, privKey);
@@ -135,24 +134,55 @@ export default function Chatroom() {
       signature_r: r,
       signature_s: s,
     };
-    console.log("Message to send:", msg);
+
     try {
       const res = await api.post("/api/messages", msg);
       const data: Message = res.data;
       setMessages((prev) => [...prev, { ...data, verified: true }]);
       setContent("");
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       alert("Failed to send message.");
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await api.post("/api/logout");
+      localStorage.removeItem("privateKey");
+      router.push("/");
+    } catch (err) {
+      alert("Logout failed");
+    }
+  };
+
+  if (authFailed) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gradient-to-tr from-blue-500 to-rose-500">
+        <div className="text-center bg-white p-10 rounded-xl shadow-lg">
+          <h1 className="text-2xl font-bold text-blue-600 mb-4">
+            You must log in first!
+          </h1>
+          <Button onClick={() => router.push("/login")}>Login here</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) return null; 
+
   return (
     <div className="flex h-screen bg-gradient-to-tr from-blue-500 to-rose-500 p-6">
       <div className="w-1/3 border-r rounded-xl mx-2 overflow-y-auto p-4 bg-white">
-        <h2 className="font-bold text-3xl flex justify-center text-blue-600 items-center mb-2">
-          Contacts
-        </h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="font-bold text-3xl text-blue-600">Contacts</h2>
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            Logout
+          </Button>
+        </div>
+        <div className="text-lg font-semibold mb-2">
+          Welcome, <span className="font-bold text-blue-600">{currentUser.username}!</span>
+        </div>
         {users.map((u) => (
           <div
             key={u.id}
@@ -164,6 +194,7 @@ export default function Chatroom() {
           </div>
         ))}
       </div>
+
       <div className="flex-1 flex flex-col p-4 mx-2 bg-white rounded-xl">
         <div className="flex-1 overflow-y-auto border-2 p-4 rounded-md space-y-2">
           {messages.map((msg, idx) => (
@@ -176,12 +207,7 @@ export default function Chatroom() {
               }`}
             >
               <div className="text-xl p-2">
-                <b>
-                  {msg.sender === currentUser?.id
-                    ? "you"
-                    : target?.username}
-                  :
-                </b>{" "}
+                <b>{msg.sender === currentUser?.id ? "You" : target?.username}:</b>{" "}
                 {msg.content}
               </div>
               <div
@@ -194,6 +220,7 @@ export default function Chatroom() {
             </div>
           ))}
         </div>
+
         <div className="flex gap-2 mt-4">
           <Input
             value={content}
