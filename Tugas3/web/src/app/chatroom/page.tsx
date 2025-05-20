@@ -161,7 +161,7 @@ export default function Chatroom() {
       <div className="flex items-center justify-center h-screen bg-gradient-to-tr from-blue-500 to-rose-500">
         <div className="text-center bg-white p-10 rounded-xl shadow-lg">
           <h1 className="text-2xl font-bold text-blue-600 mb-4">
-            You must log in first!
+            You must log in first or You have already logged in on another device!
           </h1>
           <Button onClick={() => router.push("/login")}>Login here</Button>
         </div>

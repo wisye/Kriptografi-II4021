@@ -45,7 +45,8 @@ export default function RegisterPage() {
 
       const pwdHash = sha3_256(password);
 
-      await axios.post("http://localhost:8000/api/register", { // POST request
+      await axios.post("http://103.59.160.119:4021/api/register", { // POST request
+        // 103.59.160.119:4021
         username,
         password: pwdHash,
         public_key_x: "0x" + xHex,
