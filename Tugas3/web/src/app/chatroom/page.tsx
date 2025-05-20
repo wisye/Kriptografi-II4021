@@ -80,7 +80,7 @@ export default function Chatroom() {
   useEffect(() => {
     if (!currentUser) return;
 
-    const ws = new WebSocket(`ws://localhost:8000/ws/${currentUser.id}`);
+    const ws = new WebSocket(`ws://103.59.160.119:4121/ws/${currentUser.id}`);
 
     ws.onopen = () => console.log("WebSocket connected");
 

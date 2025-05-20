@@ -32,7 +32,7 @@ export default function RegisterPage() {
       
       const key = ec.genKeyPair();
       const privHex = key.getPrivate("hex");
-      const pub = key.getPublic(); // x dan yisinya
+      const pub = key.getPublic();
       console.log(privHex);
       console.log(pub);
 
@@ -41,7 +41,7 @@ export default function RegisterPage() {
       console.log(xHex);
       console.log(yHex);
 
-      localStorage.setItem("privateKey", privHex); // ini di devTools > applications > localStorage
+      localStorage.setItem("privateKey", privHex); 
 
       const pwdHash = sha3_256(password);
 
