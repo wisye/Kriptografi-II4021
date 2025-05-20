@@ -10,4 +10,4 @@
    npm run dev
    pip install -r requirements.txt  # back-end deps
    uvicorn app:app --reload
-6. Access http://103.59.160.119:4121/ (for deployment_
+6. Access http://103.59.160.119:4121/ (for deployment)
