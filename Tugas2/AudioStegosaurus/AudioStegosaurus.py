@@ -22,6 +22,79 @@ def play_audio(path):
     else: # Linux-based
         subprocess.call(['xdg-open', path])
 
+def quantization_embed(cover_path, out_path, header_data, secret_data, interval, offset_div):
+    params, frames = get_wave_params(cover_path)
+    n_channels, sampwidth, framerate, n_frames, comp_type, comp_name = params
+
+    if sampwidth != 2:
+        raise ValueError("Cover WAV must be 16-bit PCM.")
+
+    samples = []
+    for i in range(0, len(frames), 2):
+        sample = frames[i] | (frames[i + 1] << 8)
+        samples.append(sample)
+
+    header_bits = [((byte >> bit_i) & 1) for byte in header_data for bit_i in range(8)]
+    secret_bits = [((byte >> bit_i) & 1) for byte in secret_data for bit_i in range(8)]
+    all_bits = header_bits + secret_bits
+
+    if len(all_bits) > len(samples):
+        raise ValueError("Not enough capacity for quantization embedding.")
+
+    embedded_samples = []
+    for i, bit in enumerate(all_bits):
+        x = samples[i]
+        Q = interval * round(x / interval)
+        y = Q + interval // offset_div if bit else Q - interval // offset_div
+        y = max(0, min(65535, y))
+        embedded_samples.append(y)
+    embedded_samples += samples[len(all_bits):]
+
+    new_frames = bytearray()
+    for s in embedded_samples:
+        new_frames.append(s & 0xFF)
+        new_frames.append((s >> 8) & 0xFF)
+
+    save_wave_file(out_path, params, new_frames)
+
+def quantization_extract(stego_path, header_size, secret_size, interval, offset_div):
+    params, frames = get_wave_params(stego_path)
+    n_channels, sampwidth, framerate, n_frames, comp_type, comp_name = params
+
+    if sampwidth != 2:
+        raise ValueError("Stego WAV must be 16-bit PCM.")
+
+    samples = []
+    for i in range(0, len(frames), 2):
+        sample = frames[i] | (frames[i + 1] << 8)
+        samples.append(sample)
+
+    total_bits = (header_size + secret_size) * 8
+    if total_bits > len(samples):
+        raise ValueError("Not enough capacity for quantization extraction.")
+
+    extracted_bits = []
+    for i in range(total_bits):
+        x = samples[i]
+        Q = interval * round(x / interval)
+        diff = x - Q
+        extracted_bits.append(1 if diff >= 0 else 0)
+
+    header_bits = extracted_bits[:header_size * 8]
+    secret_bits = extracted_bits[header_size * 8:]
+
+    header_bytes = bytearray()
+    for i in range(0, len(header_bits), 8):
+        val = sum((header_bits[i + b] << b) for b in range(8))
+        header_bytes.append(val)
+
+    secret_bytes = bytearray()
+    for i in range(0, len(secret_bits), 8):
+        val = sum((secret_bits[i + b] << b) for b in range(8))
+        secret_bytes.append(val)
+
+    return bytes(header_bytes), bytes(secret_bytes)
+
 # ===== Encryption =====
 def vigenere_encrypt(plaintext, key):
     ciphertext = []
@@ -514,6 +587,31 @@ class EmbedTab(QWidget):
         stego_layout.addWidget(self.random_key_input, 1, 1)
         
         options_layout.addWidget(stego_group)
+        # === Tambahan untuk metode Quantization ===
+        method_group = QGroupBox("Embedding Method")
+        method_layout = QHBoxLayout(method_group)
+        self.method_lsb = QRadioButton("LSB")
+        self.method_quant = QRadioButton("Quantization")
+        self.method_lsb.setChecked(True)
+        method_layout.addWidget(self.method_lsb)
+        method_layout.addWidget(self.method_quant)
+        options_layout.addWidget(method_group)
+
+        quant_group = QGroupBox("Quantization Parameters")
+        quant_layout = QGridLayout(quant_group)
+        self.interval_label = QLabel("Interval:")
+        self.interval_input = QLineEdit("512")
+        self.offset_div_label = QLabel("Offset Divisor:")
+        self.offset_div_input = QLineEdit("8")
+        quant_layout.addWidget(self.interval_label, 0, 0)
+        quant_layout.addWidget(self.interval_input, 0, 1)
+        quant_layout.addWidget(self.offset_div_label, 1, 0)
+        quant_layout.addWidget(self.offset_div_input, 1, 1)
+        options_layout.addWidget(quant_group)
+
+        self.method_lsb.toggled.connect(lambda checked: quant_group.setVisible(not checked))
+        quant_group.setVisible(False)
+
         main_layout.addWidget(options_group)
         
         # Step 3: Process
