@@ -42,7 +42,7 @@ class Course(BaseModel):
         credits: int
         grade: float
 
-class TranscriptInput(BaseModel):
+class AcademicInput(BaseModel):
         nim: str
         name: str
         courses: list[Course]
@@ -230,40 +230,40 @@ def get_profile(current_user = Depends(get_current_user)):
         "role": current_user["role"]
     }
 
-@app.post("/transcript/input")
-def input_transcript(
-        transcript_data: TranscriptInput,
+@app.post("/academic/input")
+def input_academic(
+        academic_data: AcademicInput,
         db: sqlite3.Connection = Depends(get_db),
         current_user = Depends(require_role(["Dosen Wali"]))
 ):
         # Validate courses
-        if len(transcript_data.courses) != 10:
+        if len(academic_data.courses) != 10:
                 raise HTTPException(status_code=400, detail="Exactly 10 courses required")
 
         # Validate AES key
-        if not transcript_data.aes_key_hex: 
+        if not academic_data.aes_key_hex: 
                 raise HTTPException(status_code=400, detail="AES key cannot be empty")          
-        if len(transcript_data.aes_key_hex) != 64:  # 32 bytes for AES-256
+        if len(academic_data.aes_key_hex) != 64:  # 32 bytes for AES-256
                 raise HTTPException(status_code=400, detail="AES key must be 64 hexadecimal characters (32 bytes)")     
         try:
-                bytes.fromhex(transcript_data.aes_key_hex)
+                bytes.fromhex(academic_data.aes_key_hex)
         except ValueError:      
                 raise HTTPException(status_code=400, detail="Invalid AES key format, must be hexadecimal")                      
 
         # Calculate IPK
-        ipk = calculate_ipk(transcript_data.courses)
+        ipk = calculate_ipk(academic_data.courses)
 
         data = {
-                "nim": transcript_data.nim,
-                "name": transcript_data.name,
-                "courses": [course.dict() for course in transcript_data.courses],
+                "nim": academic_data.nim,
+                "name": academic_data.name,
+                "courses": [course.dict() for course in academic_data.courses],
                 "ipk": ipk,
         }
         data_json = json.dumps(data, indent=4)
 
-        # Encrypt transcript data with AES
+        # Encrypt academic data with AES
         try:
-                encrypted_data = encrypt_aes_cbc(data_json, transcript_data.aes_key_hex)
+                encrypted_data = encrypt_aes_cbc(data_json, academic_data.aes_key_hex)
         except ValueError as e:
                 raise HTTPException(status_code=400, detail=f"AES Encryption error: {str(e)}")
         except Exception as e:
@@ -275,116 +275,133 @@ def input_transcript(
                 raise HTTPException(status_code=400, detail="Invalid major for encryption keys")
         public_key = KAPRODI_RSA_KEYS[major]["public"]
         try:
-                aes_key = hex_to_int(transcript_data.aes_key_hex)
+                aes_key = hex_to_int(academic_data.aes_key_hex)
                 encrypted_aes_key = rsa_encrypt(aes_key, (public_key["e"], public_key["n"]))
                 encrypted_aes_key = int_to_hex(encrypted_aes_key)
         except Exception as e:
                 raise HTTPException(status_code=500, detail=f"RSA Encryption error: {str(e)}")
-    
+
+        # Hash academic data
+        try:
+                hashed_data = hashlib.sha3_256(data_json.encode()).hexdigest()
+        except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Hashing error: {str(e)}")
+
         # Create digital signature (simplified with SHA-3)
-        signature_data = f"{transcript_data.nim}{transcript_data.name}{ipk}".encode()
-        signature = hashlib.sha3_256(signature_data).hexdigest()
+        signature = hashlib.sha3_256(data_json.encode()).hexdigest()
+        if not signature:
+                raise HTTPException(status_code=500, detail="Failed to create digital signature")
     
-        # Store transcript in database
+        # Store academic in database
         try:
                 cursor = db.cursor()
                 cursor.execute(
-                        "INSERT INTO transcripts (nim, name, encrypted_data, encrypted_key, signature, created_by) VALUES (?, ?, ?, ?, ?, ?)",
-                        (transcript_data.nim, transcript_data.name, encrypted_data, encrypted_aes_key, signature, current_user["id"])
+                        "INSERT INTO academics (nim, name, encrypted_data, encrypted_key, hashed_data, signature, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (academic_data.nim, academic_data.name, encrypted_data, encrypted_aes_key, hashed_data, signature, current_user["id"])
                 )
-                transcript_id = cursor.lastrowid
+                academic_id = cursor.lastrowid
                 db.commit()
         except sqlite3.Error as e:
                 raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     
         return {
-                "message": "Transcript saved successfully",
-                "transcript_id": transcript_id,
+                "message": "academic saved successfully",
+                "academic_id": academic_id,
                 "ipk": ipk,
                 "signature": signature
         }
 
-@app.get("/transcript/list")
-def list_transcripts(
+@app.get("/academic/list")
+def list_academics(
         db: sqlite3.Connection = Depends(get_db),
         current_user = Depends(get_current_user)
 ):
         cursor = db.cursor()
 
-        base_query = "SELECT t.id, t.nim, t.name, t.created_at, u.username AS created_by_usn FROM transcripts t JOIN users u ON t.created_by = u.id"
+        base_query = "SELECT t.id, t.nim, t.name, t.created_at, u.username AS created_by_usn FROM academics t JOIN users u ON t.created_by = u.id"
         
         try:
                 if current_user["role"] == "Mahasiswa":
-                        # Students can only see their own transcript
+                        # Students can only see their own academic
                         cursor.execute(f"{base_query} WHERE t.nim = ?", (current_user["username"],))
                 elif current_user["role"] == "Dosen Wali" or current_user["role"] == "Dosen Wali":
-                        # Dosen Wali and Ketua Program Studi can list all transcripts
+                        # Dosen Wali and Ketua Program Studi can list all academics
                         cursor.execute(f"{base_query} WHERE t.created_by = ?", (current_user["id"],))
                 else:
-                        raise HTTPException(status_code=403, detail="Insufficient permissions to view transcripts")
+                        raise HTTPException(status_code=403, detail="Insufficient permissions to view academics")
         except sqlite3.Error as e:
                 raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
             
-        transcripts = cursor.fetchall()
+        academics = cursor.fetchall()
 
-        return {"transcripts": [dict(t) for t in transcripts]}
+        return {"academics": [dict(t) for t in academics]}
 
-@app.get("/transcript/{transcript_id}")
-def get_transcript_detail(
-        transcript_id: int,
+@app.get("/academic/{academic_id}")
+def get_academic_detail(
+        academic_id: int,
+        aes_key_hex: Optional[str] = None,
         db: sqlite3.Connection = Depends(get_db),
         current_user = Depends(get_current_user)
 ):
         cursor = db.cursor()
 
         cursor.execute(
-                "SELECT t.id, t.nim, t.name, t.encrypted_data, t.encrypted_key, t.signature, t.created_at, u.username AS created_by_usn "
-                "FROM transcripts t JOIN users u ON t.created_by = u.id WHERE t.id = ?",
-                (transcript_id,)
+                "SELECT t.id, t.nim, t.name, t.encrypted_data, t.encrypted_key, t.hashed_data, t.signature, t.created_at, u.username AS created_by_usn "
+                "FROM academics t JOIN users u ON t.created_by = u.id WHERE t.id = ?",
+                (academic_id,)
         )       
 
-        transcript = cursor.fetchone()
+        academic = cursor.fetchone()
 
-        if not transcript:
-                raise HTTPException(status_code=404, detail="Transcript not found")
-        if current_user["role"] == "Mahasiswa" and transcript["nim"] != current_user["username"]:
-                raise HTTPException(status_code=403, detail="You can only view your own transcript")
-        if current_user["role"] == "Dosen Wali" and transcript["created_by_usn"] != current_user["username"]:
+        if not academic:
+                raise HTTPException(status_code=404, detail="academic not found")
+        
+        if current_user["role"] == "Mahasiswa" and academic["nim"] != current_user["username"]:
+                raise HTTPException(status_code=403, detail="You can only view your own academic")
+        
+        academic = dict(academic)
+        
+        if current_user["role"] == "Dosen Wali" and academic["created_by_usn"] == current_user["username"] or current_user["role"] == "Mahasiswa" and academic["nim"] == current_user["username"]:
+                academic["aes_key_hex"] = aes_key_hex
+        elif academic["created_by_usn"] != current_user["username"] and current_user["role"] != "Dosen Wali":
                 # TODO: implement SSS
-                raise HTTPException(status_code=403, detail="You can only view transcripts you created")
-        
-        transcript = dict(transcript)
-        
-        # Decrypt AES key
-        major = current_user["major"]
-        if major not in KAPRODI_RSA_KEYS:
-                raise HTTPException(status_code=400, detail="Invalid major for decryption keys")
-        private_key = KAPRODI_RSA_KEYS[major]["private"]
-        # try:
-        encrypted_aes_key = hex_to_int(transcript["encrypted_key"])
-        decrypted_aes_key = rsa_decrypt(encrypted_aes_key, (private_key["d"], private_key["n"]))
-        transcript["aes_key_hex"] = int_to_hex(decrypted_aes_key)
-        # except Exception as e:
-        #         raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
+                raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key")
+        elif current_user["role"] == "Ketua Program Studi":
+                # Decrypt AES key using private RSA key
+                major = current_user["major"]
+                if major not in KAPRODI_RSA_KEYS:
+                        raise HTTPException(status_code=400, detail="Invalid major for decryption keys")
+                private_key = KAPRODI_RSA_KEYS[major]["private"]
+                try:
+                        encrypted_aes_key = hex_to_int(academic["encrypted_key"])
+                        decrypted_aes_key = rsa_decrypt(encrypted_aes_key, (private_key["d"], private_key["n"]))
+                        academic["aes_key_hex"] = int_to_hex(decrypted_aes_key)
+                except Exception as e:
+                        raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
 
-        # Decrypt transcript data
+        # Decrypt academic data
         try:
-                decrypted_data = decrypt_aes_cbc(transcript["encrypted_data"], transcript["aes_key_hex"])
+                decrypted_data = decrypt_aes_cbc(academic["encrypted_data"], academic["aes_key_hex"])
                 decrypted_json = json.loads(decrypted_data)
         except ValueError as e:
-                raise HTTPException(status_code=400, detail=f"Transcript's AES Decryption error: {str(e)}")
+                raise HTTPException(status_code=400, detail=f"academic's AES Decryption error: {str(e)}")
         except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Unexpected error during transcript decryption: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Unexpected error during academic decryption: {str(e)}")
         
         response_json = {
-                "id": transcript["id"],
+                "id": academic["id"],
                 "nim": decrypted_json["nim"],
                 "name": decrypted_json["name"],
                 "courses": decrypted_json["courses"],
                 "ipk": decrypted_json["ipk"],
-                "signature": transcript["signature"],
-                "created_at": transcript["created_at"],
-                "created_by_usn": transcript["created_by_usn"]
+                "hashed_data": academic["hashed_data"],
+                "signature": academic["signature"],
+                "kaprodi_public_key": {
+                        "e": KAPRODI_RSA_KEYS[current_user["major"]]["public"]["e"],
+                        "n": KAPRODI_RSA_KEYS[current_user["major"]]["public"]["n"]
+                },
+                "created_at": academic["created_at"],
+                "created_by_usn": academic["created_by_usn"]
         }
 
         return response_json
