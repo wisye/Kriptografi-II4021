@@ -5,12 +5,13 @@ import sqlite3
 from passlib.context import CryptContext
 import hashlib
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import json
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from Crypto.Random import get_random_bytes
 import base64
+from keys_config import KAPRODI_RSA_KEYS
 
 app = FastAPI()
 DATABASE = "database.db"
@@ -138,6 +139,31 @@ def decrypt_aes_cbc(encrypted_data: str, key_hex: str) -> str:
         pt_bytes = unpad(cipher.decrypt(ct), AES.block_size)
         return pt_bytes.decode('utf-8')
 
+def hex_to_int(hex_str: str) -> int:
+        try:
+                return int(hex_str, 16)
+        except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid hexadecimal string")
+        
+def int_to_hex(value: int) -> str:
+        if value < 0:
+                raise HTTPException(status_code=400, detail="Value must be non-negative")
+        return hex(value)[2:].zfill(64)
+
+def rsa_encrypt(data_int: int, public_key_tuple: Tuple[int, int]) -> int:
+        e, n = public_key_tuple
+        if data_int >= n:
+                raise HTTPException(status_code=400, detail="Data to encrypt mut be numerically smaller than RSA modulus n")
+        ciphertext_int = pow(data_int, e, n)
+        return ciphertext_int
+
+def rsa_decrypt(encrypted_data_int: int, private_key_tuple: Tuple[int, int]) -> int:
+        d, n = private_key_tuple
+        if encrypted_data_int >= n:
+                raise HTTPException(status_code=400, detail="Encrypted data must be numerically smaller than RSA modulus n")
+        plaintext_int = pow(encrypted_data_int, d, n)
+        return plaintext_int
+
 @app.on_event("startup")
 async def startup_event():
         init_db()
@@ -242,6 +268,18 @@ def input_transcript(
                 raise HTTPException(status_code=400, detail=f"AES Encryption error: {str(e)}")
         except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Unexpected error during encryption: {str(e)}")
+        
+        # Encrypt AES key with RSA
+        major = current_user["major"]
+        if major not in KAPRODI_RSA_KEYS:
+                raise HTTPException(status_code=400, detail="Invalid major for encryption keys")
+        public_key = KAPRODI_RSA_KEYS[major]["public"]
+        try:
+                aes_key = hex_to_int(transcript_data.aes_key_hex)
+                encrypted_aes_key = rsa_encrypt(aes_key, (public_key["e"], public_key["n"]))
+                encrypted_aes_key = int_to_hex(encrypted_aes_key)
+        except Exception as e:
+                raise HTTPException(status_code=500, detail=f"RSA Encryption error: {str(e)}")
     
         # Create digital signature (simplified with SHA-3)
         signature_data = f"{transcript_data.nim}{transcript_data.name}{ipk}".encode()
@@ -251,18 +289,10 @@ def input_transcript(
         try:
                 cursor = db.cursor()
                 cursor.execute(
-                        "INSERT INTO transcripts (nim, name, encrypted_data, ipk, signature, created_by) VALUES (?, ?, ?, ?, ?, ?)",
-                        (transcript_data.nim, transcript_data.name, encrypted_data, ipk, signature, current_user["id"])
+                        "INSERT INTO transcripts (nim, name, encrypted_data, encrypted_key, signature, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+                        (transcript_data.nim, transcript_data.name, encrypted_data, encrypted_aes_key, signature, current_user["id"])
                 )
                 transcript_id = cursor.lastrowid
-                # Store courses
-                for course in transcript_data.courses:
-                        grade_point = course.grade
-                        cursor.execute(
-                        "INSERT INTO courses (transcript_id, course_code, course_name, credits, grade) VALUES (?, ?, ?, ?, ?)",
-                        (transcript_id, course.course_code, course.course_name, course.credits, course.grade)
-                        )
-
                 db.commit()
         except sqlite3.Error as e:
                 raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
@@ -281,18 +311,15 @@ def list_transcripts(
 ):
         cursor = db.cursor()
 
-        base_query = "SELECT t.id, t.nim, t.name, t.ipk, t.created_at, u.username AS created_by_usn FROM transcripts t JOIN users u ON t.created_by = u.id"
+        base_query = "SELECT t.id, t.nim, t.name, t.created_at, u.username AS created_by_usn FROM transcripts t JOIN users u ON t.created_by = u.id"
         
         try:
                 if current_user["role"] == "Mahasiswa":
                         # Students can only see their own transcript
-                        cursor.execute(
-                                cursor.execute(f"{base_query} WHERE t.nim = ?", (current_user["username"],))
-                        )
+                        cursor.execute(f"{base_query} WHERE t.nim = ?", (current_user["username"],))
                 elif current_user["role"] == "Dosen Wali" or current_user["role"] == "Dosen Wali":
                         # Dosen Wali and Ketua Program Studi can list all transcripts
-                        cursor.execute(cursor.execute(f"{base_query} WHERE t.created_by = ?", (current_user["id"],))
-                        )
+                        cursor.execute(f"{base_query} WHERE t.created_by = ?", (current_user["id"],))
                 else:
                         raise HTTPException(status_code=403, detail="Insufficient permissions to view transcripts")
         except sqlite3.Error as e:
@@ -311,43 +338,53 @@ def get_transcript_detail(
         cursor = db.cursor()
 
         cursor.execute(
-                "SELECT t.id, t.nim, t.name, t.encrypted_data, t.ipk, t.signature, t.created_at, u.username AS created_by_usn "
+                "SELECT t.id, t.nim, t.name, t.encrypted_data, t.encrypted_key, t.signature, t.created_at, u.username AS created_by_usn "
                 "FROM transcripts t JOIN users u ON t.created_by = u.id WHERE t.id = ?",
                 (transcript_id,)
         )       
 
         transcript = cursor.fetchone()
 
+        if not transcript:
+                raise HTTPException(status_code=404, detail="Transcript not found")
         if current_user["role"] == "Mahasiswa" and transcript["nim"] != current_user["username"]:
                 raise HTTPException(status_code=403, detail="You can only view your own transcript")
         if current_user["role"] == "Dosen Wali" and transcript["created_by_usn"] != current_user["username"]:
                 # TODO: implement SSS
                 raise HTTPException(status_code=403, detail="You can only view transcripts you created")
         
-        if not transcript:
-                raise HTTPException(status_code=404, detail="Transcript not found")
-        
         transcript = dict(transcript)
-
-        # Fetch courses
-        try:
-                cursor.execute(
-                        "SELECT course_code, course_name, credits, grade FROM courses WHERE transcript_id = ?",
-                        (transcript_id,)
-                )
-                courses = cursor.fetchall()
-        except sqlite3.Error as e:
-                raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
-        transcript["courses"] = [dict(course) for course in courses]
+        
+        # Decrypt AES key
+        major = current_user["major"]
+        if major not in KAPRODI_RSA_KEYS:
+                raise HTTPException(status_code=400, detail="Invalid major for decryption keys")
+        private_key = KAPRODI_RSA_KEYS[major]["private"]
+        # try:
+        encrypted_aes_key = hex_to_int(transcript["encrypted_key"])
+        decrypted_aes_key = rsa_decrypt(encrypted_aes_key, (private_key["d"], private_key["n"]))
+        transcript["aes_key_hex"] = int_to_hex(decrypted_aes_key)
+        # except Exception as e:
+        #         raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
 
         # Decrypt transcript data
-        # try:
-        #         decrypted_data = decrypt_aes_cbc(transcript["encrypted_data"], transcript["aes_key_hex"])
-        #         transcript_json = json.loads(decrypted_data)
-        # except ValueError as e:
-        #         raise HTTPException(status_code=400, detail=f"AES Decryption error: {str(e)}")
-        # except Exception as e:
-        #         raise HTTPException(status_code=500, detail=f"Unexpected error during decryption: {str(e)}")
+        try:
+                decrypted_data = decrypt_aes_cbc(transcript["encrypted_data"], transcript["aes_key_hex"])
+                decrypted_json = json.loads(decrypted_data)
+        except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Transcript's AES Decryption error: {str(e)}")
+        except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Unexpected error during transcript decryption: {str(e)}")
+        
+        response_json = {
+                "id": transcript["id"],
+                "nim": decrypted_json["nim"],
+                "name": decrypted_json["name"],
+                "courses": decrypted_json["courses"],
+                "ipk": decrypted_json["ipk"],
+                "signature": transcript["signature"],
+                "created_at": transcript["created_at"],
+                "created_by_usn": transcript["created_by_usn"]
+        }
 
-        return transcript
+        return response_json

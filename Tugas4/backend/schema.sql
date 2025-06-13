@@ -15,19 +15,8 @@ CREATE TABLE transcripts (
         nim TEXT NOT NULL REFERENCES users (username),
         name TEXT,
         encrypted_data TEXT,
-        ipk REAL,
+        encrypted_key TEXT,
         signature TEXT,
         created_by INTEGER REFERENCES users (id),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (created_by) REFERENCES users (id)
-);
-
-CREATE TABLE courses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        transcript_id INTEGER,
-        course_code TEXT NOT NULL,
-        course_name TEXT NOT NULL,
-        credits INTEGER NOT NULL,
-        grade REAL NOT NULL,
-        FOREIGN KEY (transcript_id) REFERENCES transcripts (id)
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
