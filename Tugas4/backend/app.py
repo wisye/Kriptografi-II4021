@@ -607,7 +607,7 @@ def get_academic_detail_with_sss(
                 print(f"Unexpected SSS Key reconstruction error: {e_reconstruct}")
                 raise HTTPException(status_code=500, detail=f"SSS Key reconstruction failed: {str(e_reconstruct)}")
 
-        # --- Decrypt academic data if key is available ---
+        # Decrypt academic data if key is available
         decrypted_json_content = None
         if decrypted_aes_key_to_use:
                 try:
@@ -620,11 +620,9 @@ def get_academic_detail_with_sss(
                         print(f"Unexpected error during academic decryption for academic_id {academic_id}: {str(e_decrypt_unexpected)}")
                         decrypted_json_content = {"error_decrypting": f"Unexpected decryption error: {str(e_decrypt_unexpected)}"}
         else:
-                # This should ideally not be reached if SSS reconstruction was attempted and failed, as it would have raised an error.
-                # But as a fallback:
                 decrypted_json_content = {"error_decrypting": "AES key reconstruction failed or key not obtained."}
                 
-        # --- Prepare response ---
+        # Prepare response
         cursor.execute("SELECT major FROM users WHERE username = ?", (academic["nim"],))
         student_user_row_for_key = cursor.fetchone()
         student_major_for_kaprodi_key = student_user_row_for_key["major"] if student_user_row_for_key else None
