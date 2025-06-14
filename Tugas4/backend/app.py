@@ -524,8 +524,6 @@ def generate_pdf(academic_data):
         elements.append(Spacer(1, 1 * inch))
         elements.append(Paragraph("Digital Signature: " + academic_data['signature'][:20] + "...", normal_style))
         elements.append(Spacer(1, 0.5 * inch))
-        elements.append(Paragraph(f"Tanggal: {date.today().strftime('%B %d, %Y')}", normal_style))
-        elements.append(Spacer(1, 0.5 * inch))
         elements.append(Paragraph(f"Ketua Program Studi: {kaprodi}", normal_style))
         
         doc.build(elements)
