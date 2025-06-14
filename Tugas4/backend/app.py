@@ -24,7 +24,7 @@ import os
 from datetime import date
 
 # 256+ bit prime 
-P_SSSS = 115792089237316195423570985008687907853269984665640564039457584007913129639947
+P_SSSS = 115792089237316195423570985008687907853269984665640564039457584007913129640233
 SSSS_THRESHOLD_K = 3
 SSSS_NUM_SHARES_N = 6
 
@@ -480,17 +480,21 @@ def get_academic_detail(
                 academic["aes_key_hex"] = aes_key_hex
 
         if current_user["role"] == "Dosen Wali":
-                # Dosen Wali can view all academics they created
-                if academic["created_by_usn"] == current_user["username"]:
-                        # If aes_key_hex is provided, use it for decryption
-                        checked = check_aes_hex(aes_key_hex)
-                        if not checked:
-                                raise HTTPException(status_code=400, detail="AES key must be 64 hexadecimal characters (32 bytes)")
-                        academic["aes_key_hex"] = aes_key_hex
+                if academic["created_by_usn"] != current_user["username"]:
+                        raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key")
 
-                # Viewing other academics requires SSS
-                elif academic["created_by_usn"] != current_user["username"] :
-                        raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key. Please refer to SSS")
+                # Decrypt AES key using private RSA key
+                major = current_user["major"]
+                if major not in KAPRODI_RSA_KEYS:
+                        raise HTTPException(status_code=400, detail="Invalid major for decryption keys")
+                private_key = KAPRODI_RSA_KEYS[major]["private"]
+                try:
+                        encrypted_aes_key_int = hex_to_int(academic["encrypted_key"])
+                        decrypted_aes_key_int = rsa_decrypt(encrypted_aes_key_int, (private_key["d"], private_key["n"]))
+                        decrypted_aes_key_hex = format_aes_key_as_hex_str(decrypted_aes_key_int)
+                        academic["aes_key_hex"] = decrypted_aes_key_hex
+                except Exception as e:
+                        raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
         
         elif current_user["role"] == "Ketua Program Studi":
                 # Decrypt AES key using private RSA key
@@ -579,6 +583,9 @@ def get_academic_detail_with_sss(
         
         try:
                 prime_ssss_int = int(prime_ssss_str)
+                print(f"DEBUG: academic_id={academic_id}, Fetched prime_ssss_str from DB: '{prime_ssss_str}'") # ADD THIS
+                print(f"DEBUG: Converted prime_ssss_int: {prime_ssss_int}")
+                print(f"DEBUG: Global P_SSSS: {P_SSSS}") 
         except ValueError:
                 raise HTTPException(status_code=500, detail="Invalid prime stored for SSS.")
 
@@ -600,7 +607,9 @@ def get_academic_detail_with_sss(
         
         try:
                 reconstructed_aes_key_int = ssss_reconstruct_secret(prepared_shares_for_ssss, prime_ssss_int)
+                print(f"DEBUG: Reconstructed AES key (int): {reconstructed_aes_key_int}")
                 decrypted_aes_key_to_use = format_aes_key_as_hex_str(reconstructed_aes_key_int)
+                print(f"DEBUG: Reconstructed AES key (hex): {decrypted_aes_key_to_use}") 
         except HTTPException as he_reconstruct:
                 raise he_reconstruct 
         except Exception as e_reconstruct:
