@@ -91,7 +91,7 @@ export default function Home() {
                         />
                         <Button
                             onClick={handleLogin}
-                            className="w-full text-white font-semibold bg-[#23DF79] hover:bg-[#1ebf68] transition"
+                            className="w-full text-black font-semibold bg-[#23DF79] hover:bg-[#1ebf68] transition"
                         >
                             Login
                         </Button>

@@ -559,8 +559,11 @@ def get_academic_detail(
 
         return response_json
 
-@app.post("/academic/{academic_id}/view-sss")
-def get_academic_detail_with_sss(
+@app.post("/academic/{academic_id}/view-sss") # membuat AES Key dari 3 input sec
+def get_academic_detail_with_sss( 
+        # kalau udah request, nunggu 3 part of secret shared keys
+        # udah termasuk rekonstruksi AES key
+        # return akademik 
         academic_id: int,
         reconstruction_input: SSSReconstructionInput, 
         db: sqlite3.Connection = Depends(get_db),
@@ -1001,6 +1004,8 @@ def list_shamir_splits(
 
 @app.post("/shamir/request_split/{academic_id}")
 def request_shamir_split(
+        # split AES key for sharing with other Dosen Wali (3 - 6 shares)
+        # input to shamir_shares relation
         academic_id: int,
         db: sqlite3.Connection = Depends(get_db),
         current_user = Depends(require_role(["Dosen Wali"]))
