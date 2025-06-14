@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 import json
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
-from Crypto.Random import get_random_bytes
+import random
 import base64
 from keys_config import KAPRODI_RSA_KEYS
 
@@ -70,11 +70,15 @@ def init_db():
                 default_users = [
                         ("admin_if", pwd_context.hash("password123"), "Ketua Program Studi", "IF"),
                         ("admin_sti", pwd_context.hash("password123"), "Ketua Program Studi", "STI"),
-                        ("dosen1", pwd_context.hash("password123"), "Dosen Wali", "IF"),
+                        ("dosen1", pwd_context.hash("password123"), "Dosen Wali", "STI"),
                         ("dosen2", pwd_context.hash("password123"), "Dosen Wali", "STI"),
                         ("dosen3", pwd_context.hash("password123"), "Dosen Wali", "STI"),
+                        ("dosen4", pwd_context.hash("password123"), "Dosen Wali", "IF"),
+                        ("dosen5", pwd_context.hash("password123"), "Dosen Wali", "IF"),
+                        ("dosen6", pwd_context.hash("password123"), "Dosen Wali", "IF"),
+                        ("dosen7", pwd_context.hash("password123"), "Dosen Wali", "IF"),
                         ("18222001", pwd_context.hash("password123"), "Mahasiswa", "STI"),
-                        ("18222002", pwd_context.hash("password123"), "Mahasiswa", "STI"),
+                        ("13522001", pwd_context.hash("password123"), "Mahasiswa", "STI"),
                 ]
                 
                 cursor.executemany(
@@ -138,6 +142,15 @@ def decrypt_aes_cbc(encrypted_data: str, key_hex: str) -> str:
         cipher = AES.new(key, AES.MODE_CBC, iv)
         pt_bytes = unpad(cipher.decrypt(ct), AES.block_size)
         return pt_bytes.decode('utf-8')
+
+def check_aes_hex(key_hex: str) -> bool:
+        if len(key_hex) != 64:  # 32 bytes for AES-256
+                return False
+        try:
+                bytes.fromhex(key_hex)
+                return True
+        except ValueError:
+                return False
 
 def hex_to_int(hex_str: str) -> int:
         try:
@@ -241,14 +254,9 @@ def input_academic(
                 raise HTTPException(status_code=400, detail="Exactly 10 courses required")
 
         # Validate AES key
-        if not academic_data.aes_key_hex: 
-                raise HTTPException(status_code=400, detail="AES key cannot be empty")          
-        if len(academic_data.aes_key_hex) != 64:  # 32 bytes for AES-256
-                raise HTTPException(status_code=400, detail="AES key must be 64 hexadecimal characters (32 bytes)")     
-        try:
-                bytes.fromhex(academic_data.aes_key_hex)
-        except ValueError:      
-                raise HTTPException(status_code=400, detail="Invalid AES key format, must be hexadecimal")                      
+        checked = check_aes_hex(academic_data.aes_key_hex)
+        if not checked:
+                raise HTTPException(status_code=400, detail="AES key must be 64 hexadecimal characters (32 bytes)")                      
 
         # Calculate IPK
         ipk = calculate_ipk(academic_data.courses)
@@ -287,10 +295,14 @@ def input_academic(
         except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Hashing error: {str(e)}")
 
-        # Create digital signature (simplified with SHA-3)
-        signature = hashlib.sha3_256(data_json.encode()).hexdigest()
-        if not signature:
-                raise HTTPException(status_code=500, detail="Failed to create digital signature")
+        # Sign hash with RSA private key
+        try:
+                hashed_data_int = hex_to_int(hashed_data)
+                private_key = KAPRODI_RSA_KEYS[major]["private"]
+                signature = rsa_encrypt(hashed_data_int, (private_key["d"], private_key["n"]))
+                signature = int_to_hex(signature)
+        except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid hash format: {str(e)}")
     
         # Store academic in database
         try:
@@ -355,17 +367,33 @@ def get_academic_detail(
 
         if not academic:
                 raise HTTPException(status_code=404, detail="academic not found")
-        
-        if current_user["role"] == "Mahasiswa" and academic["nim"] != current_user["username"]:
-                raise HTTPException(status_code=403, detail="You can only view your own academic")
-        
+                
         academic = dict(academic)
         
-        if current_user["role"] == "Dosen Wali" and academic["created_by_usn"] == current_user["username"] or current_user["role"] == "Mahasiswa" and academic["nim"] == current_user["username"]:
+        if current_user["role"] == "Mahasiswa":
+                # Students can only view their own academic
+                if academic["nim"] != current_user["username"]:
+                        raise HTTPException(status_code=403, detail="You do not have permission to view this academic")
+                # If aes_key_hex is provided, use it for decryption
+                checked = check_aes_hex(aes_key_hex)
+                if not checked:
+                        raise HTTPException(status_code=400, detail="AES key must be 64 hexadecimal characters (32 bytes)")
                 academic["aes_key_hex"] = aes_key_hex
-        elif academic["created_by_usn"] != current_user["username"] and current_user["role"] != "Dosen Wali":
-                # TODO: implement SSS
-                raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key")
+
+        if current_user["role"] == "Dosen Wali":
+                # Dosen Wali can view all academics they created
+                if academic["created_by_usn"] == current_user["username"]:
+                        # If aes_key_hex is provided, use it for decryption
+                        checked = check_aes_hex(aes_key_hex)
+                        if not checked:
+                                raise HTTPException(status_code=400, detail="AES key must be 64 hexadecimal characters (32 bytes)")
+                        academic["aes_key_hex"] = aes_key_hex
+
+                # Viewing other academics requires SSS
+                elif academic["created_by_usn"] != current_user["username"] :
+                        # TODO: implement SSS
+                        raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key")
+        
         elif current_user["role"] == "Ketua Program Studi":
                 # Decrypt AES key using private RSA key
                 major = current_user["major"]
@@ -387,7 +415,10 @@ def get_academic_detail(
                 raise HTTPException(status_code=400, detail=f"academic's AES Decryption error: {str(e)}")
         except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Unexpected error during academic decryption: {str(e)}")
-        
+                
+        e = KAPRODI_RSA_KEYS[current_user['major']]['public']['e'] 
+        n = KAPRODI_RSA_KEYS[current_user['major']]['public']['n'] 
+
         response_json = {
                 "id": academic["id"],
                 "nim": decrypted_json["nim"],
@@ -397,8 +428,8 @@ def get_academic_detail(
                 "hashed_data": academic["hashed_data"],
                 "signature": academic["signature"],
                 "kaprodi_public_key": {
-                        "e": KAPRODI_RSA_KEYS[current_user["major"]]["public"]["e"],
-                        "n": KAPRODI_RSA_KEYS[current_user["major"]]["public"]["n"]
+                        "e": str(e),
+                        "n": str(n) if n is not None else None
                 },
                 "created_at": academic["created_at"],
                 "created_by_usn": academic["created_by_usn"]

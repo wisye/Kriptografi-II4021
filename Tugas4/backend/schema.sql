@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS academics;
-DROP TABLE IF EXISTS courses;
+DROP TABLE IF EXISTS academic_shares;
 
 CREATE TABLE users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,4 +20,15 @@ CREATE TABLE academics (
         signature TEXT,
         created_by INTEGER REFERENCES users (id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF academic_shares (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        academic_id INTEGER NOT NULL REFERENCES academics (id),
+        dosen_wali_id INTEGER NOT NULL REFERENCES users (id),
+        share_x INTEGER NOT NULL,
+        share_y INTEGER NOT NULL,
+        requested_by INTEGER NOT NULL REFERENCES users (id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (academic_id, shared_with)
 );
