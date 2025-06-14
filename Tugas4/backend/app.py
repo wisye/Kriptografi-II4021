@@ -93,14 +93,18 @@ def init_db():
                         ("admin_if", pwd_context.hash("password123"), "Ketua Program Studi", "IF"),
                         ("admin_sti", pwd_context.hash("password123"), "Ketua Program Studi", "STI"),
                         ("dosen1", pwd_context.hash("password123"), "Dosen Wali", "STI"),
-                        ("dosen2", pwd_context.hash("password123"), "Dosen Wali", "STI"),
+                        ("dosen2", pwd_context.hash("password123"), "Dosen Wali", "IF"),
                         ("dosen3", pwd_context.hash("password123"), "Dosen Wali", "STI"),
                         ("dosen4", pwd_context.hash("password123"), "Dosen Wali", "IF"),
-                        ("dosen5", pwd_context.hash("password123"), "Dosen Wali", "IF"),
+                        ("dosen5", pwd_context.hash("password123"), "Dosen Wali", "STI"),
                         ("dosen6", pwd_context.hash("password123"), "Dosen Wali", "IF"),
-                        ("dosen7", pwd_context.hash("password123"), "Dosen Wali", "IF"),
+                        ("dosen7", pwd_context.hash("password123"), "Dosen Wali", "STI"),
                         ("18222001", pwd_context.hash("password123"), "Mahasiswa", "STI"),
-                        ("13522001", pwd_context.hash("password123"), "Mahasiswa", "STI"),
+                        ("18222002", pwd_context.hash("password123"), "Mahasiswa", "STI"),
+                        ("18222003", pwd_context.hash("password123"), "Mahasiswa", "STI"),
+                        ("13522001", pwd_context.hash("password123"), "Mahasiswa", "IF"),
+                        ("13522002", pwd_context.hash("password123"), "Mahasiswa", "IF"),
+                        ("13522003", pwd_context.hash("password123"), "Mahasiswa", "IF"),
                 ]
                 
                 cursor.executemany(
@@ -333,6 +337,21 @@ def get_profile(current_user = Depends(get_current_user)):
         "role": current_user["role"]
     }
 
+@app.get("/user/list_maba")
+def list_maba(
+    db: sqlite3.Connection = Depends(get_db),
+    current_user=Depends(require_role(["Dosen Wali"]))
+):
+    cursor = db.cursor()
+
+    # Secure parameterized SQL
+    query = "SELECT u.username, u.major FROM users u LEFT JOIN academics a ON u.username = a.nim WHERE u.role = 'Mahasiswa' AND u.major = ? AND a.nim IS NULL"
+    cursor.execute(query, (current_user["major"],))
+    maba_list = cursor.fetchall()
+
+    return {"maba_list": [dict(row) for row in maba_list]}
+
+
 @app.post("/academic/input")
 def input_academic(
         academic_data: AcademicInput,
@@ -481,7 +500,7 @@ def get_academic_detail(
 
         if current_user["role"] == "Dosen Wali":
                 if academic["created_by_usn"] != current_user["username"]:
-                        raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key")
+                        raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key. Please refer to SSS")
 
                 # Decrypt AES key using private RSA key
                 major = current_user["major"]
