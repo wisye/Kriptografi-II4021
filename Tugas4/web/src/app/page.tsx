@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import Image from "next/image";
 
-export default function HomePage() {
+export default function Home() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
@@ -31,12 +31,12 @@ export default function HomePage() {
 
             localStorage.setItem("user", JSON.stringify(data.user));
 
-            if (data.user.role === "mahasiswa") {
-                window.location.href = "/transkrip";
-            } else if (data.user.role === "dosen") {
-                window.location.href = "/bimbingan";
-            } else if (data.user.role === "kaprodi") {
+            if (data.user.role === "Mahasiswa") {
                 window.location.href = "/mahasiswa";
+            } else if (data.user.role === "Dosen Wali") {
+                window.location.href = "/dosen";
+            } else if (data.user.role === "Ketua Program Studi") {
+                window.location.href = "/kaprodi";
             }
         } catch (err) {
             setError(
