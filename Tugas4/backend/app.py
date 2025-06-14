@@ -467,8 +467,21 @@ def generate_pdf(academic_data):
         elements.append(Paragraph("Institut Teknologi Berlin", title_style))
         elements.append(Spacer(1, 0.25 * inch))
         
+        nim = academic_data['nim']
+        jurusan = ""
+        kaprodi = ""
+        if nim and len(nim) >= 3:
+                first_three_digits = nim[:3]
+                if first_three_digits == "135":
+                        jurusan = "Informatika"
+                        kaprodi = "Yudistira Dwi Wardhana Asnar, S.T., Ph.D."
+                else:
+                        jurusan = "Sistem dan Teknologi Informasi"
+                        kaprodi = "Ir. I Gusti Bagus Baskara Nugraha, S.T., M.T., Ph.D."
+        
         elements.append(Paragraph(f"Nama: {academic_data['name']}", subtitle_style))
         elements.append(Paragraph(f"NIM: {academic_data['nim']}", subtitle_style))
+        elements.append(Paragraph(f"Jurusan: {jurusan}", subtitle_style))
         elements.append(Paragraph(f"Tanggal: {date.today().strftime('%B %d, %Y')}", normal_style))
         elements.append(Paragraph(f"IPK: {academic_data['ipk']}", subtitle_style))
         elements.append(Paragraph(f"Dosen Wali: {academic_data['created_by_usn']}", normal_style))
@@ -512,6 +525,8 @@ def generate_pdf(academic_data):
         elements.append(Paragraph("Digital Signature: " + academic_data['signature'][:20] + "...", normal_style))
         elements.append(Spacer(1, 0.5 * inch))
         elements.append(Paragraph(f"Tanggal: {date.today().strftime('%B %d, %Y')}", normal_style))
+        elements.append(Spacer(1, 0.5 * inch))
+        elements.append(Paragraph(f"Ketua Program Studi: {kaprodi}", normal_style))
         
         doc.build(elements)
         buffer.seek(0)
