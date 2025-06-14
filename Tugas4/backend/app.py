@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, Response
+from fastapi import FastAPI, HTTPException, Depends, Request, Response, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
@@ -12,6 +12,15 @@ from Crypto.Util.Padding import pad, unpad
 import random
 import base64
 from keys_config import KAPRODI_RSA_KEYS
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+from io import BytesIO
+from fastapi.responses import StreamingResponse
+import os
+from datetime import date
 
 app = FastAPI()
 DATABASE = "database.db"
@@ -436,3 +445,281 @@ def get_academic_detail(
         }
 
         return response_json
+
+def generate_pdf(academic_data):
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+                buffer,
+                pagesize=letter,
+                rightMargin=72,
+                leftMargin=72,
+                topMargin=72,
+                bottomMargin=72
+        )
+        
+        elements = []
+        
+        styles = getSampleStyleSheet()
+        title_style = styles['Heading1']
+        subtitle_style = styles['Heading2']
+        normal_style = styles['Normal']
+        
+        elements.append(Paragraph("Institut Teknologi Berlin", title_style))
+        elements.append(Spacer(1, 0.25 * inch))
+        
+        elements.append(Paragraph(f"Nama: {academic_data['name']}", subtitle_style))
+        elements.append(Paragraph(f"NIM: {academic_data['nim']}", subtitle_style))
+        elements.append(Paragraph(f"Tanggal: {date.today().strftime('%B %d, %Y')}", normal_style))
+        elements.append(Paragraph(f"IPK: {academic_data['ipk']}", subtitle_style))
+        elements.append(Paragraph(f"Dosen Wali: {academic_data['created_by_usn']}", normal_style))
+        elements.append(Spacer(1, 0.5 * inch))
+        
+        data = [
+                ['Course Code', 'Course Name', 'Credits', 'Grade']
+        ]
+        
+        for course in academic_data['courses']:
+                data.append([
+                course['course_code'],
+                course['course_name'],
+                str(course['credits']),
+                str(course['grade'])
+                ])
+        
+        total_credits = sum(course['credits'] for course in academic_data['courses'])
+        data.append(['Total', '', str(total_credits), ''])
+        
+        table = Table(data, colWidths=[1 * inch, 3 * inch, 1 * inch, 1 * inch])
+        
+        table_style = TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ])
+        
+        for i in range(1, len(data) - 1):
+                if i % 2 == 0:
+                        table_style.add('BACKGROUND', (0, i), (-1, i), colors.lightgrey)
+        
+        table.setStyle(table_style)
+        elements.append(table)
+        
+        elements.append(Spacer(1, 1 * inch))
+        elements.append(Paragraph("Digital Signature: " + academic_data['signature'][:20] + "...", normal_style))
+        elements.append(Spacer(1, 0.5 * inch))
+        elements.append(Paragraph(f"Tanggal: {date.today().strftime('%B %d, %Y')}", normal_style))
+        
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+@app.get("/academic/{academic_id}/pdf")
+def get_academic_pdf(
+        academic_id: int,
+        aes_key_hex: Optional[str] = None,
+        db: sqlite3.Connection = Depends(get_db),
+        current_user = Depends(get_current_user)
+):
+        cursor = db.cursor()
+
+        cursor.execute(
+                "SELECT t.id, t.nim, t.name, t.encrypted_data, t.encrypted_key, t.hashed_data, t.signature, t.created_at, u.username AS created_by_usn "
+                "FROM academics t JOIN users u ON t.created_by = u.id WHERE t.id = ?",
+                (academic_id,)
+        )       
+
+        academic = cursor.fetchone()
+
+        if not academic:
+                raise HTTPException(status_code=404, detail="Academic record not found")
+        
+        if current_user["role"] == "Mahasiswa" and academic["nim"] != current_user["username"]:
+                raise HTTPException(status_code=403, detail="You can only view your own academic records")
+        
+        academic = dict(academic)
+        
+        if current_user["role"] == "Dosen Wali" and academic["created_by_usn"] == current_user["username"] or current_user["role"] == "Mahasiswa" and academic["nim"] == current_user["username"]:
+                academic["aes_key_hex"] = aes_key_hex
+        elif academic["created_by_usn"] != current_user["username"] and current_user["role"] != "Dosen Wali":
+                raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key")
+        elif current_user["role"] == "Ketua Program Studi":
+                major = current_user["major"]
+                if major not in KAPRODI_RSA_KEYS:
+                        raise HTTPException(status_code=400, detail="Invalid major for decryption keys")
+                private_key = KAPRODI_RSA_KEYS[major]["private"]
+                try:
+                        encrypted_aes_key = hex_to_int(academic["encrypted_key"])
+                        decrypted_aes_key = rsa_decrypt(encrypted_aes_key, (private_key["d"], private_key["n"]))
+                        academic["aes_key_hex"] = int_to_hex(decrypted_aes_key)
+                except Exception as e:
+                        raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
+
+        try:
+                decrypted_data = decrypt_aes_cbc(academic["encrypted_data"], academic["aes_key_hex"])
+                decrypted_json = json.loads(decrypted_data)
+        except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Academic's AES Decryption error: {str(e)}")
+        except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Unexpected error during academic decryption: {str(e)}")
+        
+        academic_data = {
+                "id": academic["id"],
+                "nim": decrypted_json["nim"],
+                "name": decrypted_json["name"],
+                "courses": decrypted_json["courses"],
+                "ipk": decrypted_json["ipk"],
+                "signature": academic["signature"],
+                "created_at": academic["created_at"],
+                "created_by_usn": academic["created_by_usn"]
+        }
+        
+        pdf_buffer = generate_pdf(academic_data)
+        
+        filename = f"transcript_{academic_data['nim']}_{date.today().strftime('%Y%m%d')}.pdf"
+        headers = {
+                'Content-Disposition': f'attachment; filename="{filename}"'
+        }
+        
+        return StreamingResponse(
+                pdf_buffer, 
+                media_type="application/pdf",
+                headers=headers
+        )
+        
+def rc4_ksa(key):
+        key_bytes = key.encode() if isinstance(key, str) else key
+        S = list(range(256))
+        j = 0
+        for i in range(256):
+                j = (j + S[i] + key_bytes[i % len(key_bytes)]) % 256
+                S[i], S[j] = S[j], S[i]
+        return S
+
+def rc4_prga(S, data):
+        i = j = 0
+        encrypted = bytearray()
+        for byte in data:
+                i = (i + 1) % 256
+                j = (j + S[i]) % 256
+                S[i], S[j] = S[j], S[i]
+                k = S[(S[i] + S[j]) % 256]
+                encrypted.append(byte ^ k)
+        return bytes(encrypted)
+
+def rc4_encrypt(data, key):
+        if isinstance(data, str):
+                data = data.encode()
+        S = rc4_ksa(key)
+        return rc4_prga(S, data)
+
+def rc4_decrypt(encrypted_data, key):
+        return rc4_encrypt(encrypted_data, key)
+
+@app.get("/academic/{academic_id}/encrypted-pdf")
+def get_encrypted_academic_pdf(
+        academic_id: int,
+        rc4_key: str,
+        aes_key_hex: Optional[str] = None,
+        db: sqlite3.Connection = Depends(get_db),
+        current_user = Depends(get_current_user)
+):
+        cursor = db.cursor()
+
+        cursor.execute(
+                "SELECT t.id, t.nim, t.name, t.encrypted_data, t.encrypted_key, t.hashed_data, t.signature, t.created_at, u.username AS created_by_usn "
+                "FROM academics t JOIN users u ON t.created_by = u.id WHERE t.id = ?",
+                (academic_id,)
+        )       
+
+        academic = cursor.fetchone()
+
+        if not academic:
+                raise HTTPException(status_code=404, detail="Academic record not found")
+        
+        if current_user["role"] == "Mahasiswa" and academic["nim"] != current_user["username"]:
+                raise HTTPException(status_code=403, detail="You can only view your own academic records")
+        
+        academic = dict(academic)
+        
+        if current_user["role"] == "Dosen Wali" and academic["created_by_usn"] == current_user["username"] or current_user["role"] == "Mahasiswa" and academic["nim"] == current_user["username"]:
+                academic["aes_key_hex"] = aes_key_hex
+        elif academic["created_by_usn"] != current_user["username"] and current_user["role"] != "Dosen Wali":
+                raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key")
+        elif current_user["role"] == "Ketua Program Studi":
+                major = current_user["major"]
+                if major not in KAPRODI_RSA_KEYS:
+                        raise HTTPException(status_code=400, detail="Invalid major for decryption keys")
+                private_key = KAPRODI_RSA_KEYS[major]["private"]
+                try:
+                        encrypted_aes_key = hex_to_int(academic["encrypted_key"])
+                        decrypted_aes_key = rsa_decrypt(encrypted_aes_key, (private_key["d"], private_key["n"]))
+                        academic["aes_key_hex"] = int_to_hex(decrypted_aes_key)
+                except Exception as e:
+                        raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
+
+        try:
+                decrypted_data = decrypt_aes_cbc(academic["encrypted_data"], academic["aes_key_hex"])
+                decrypted_json = json.loads(decrypted_data)
+        except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Academic's AES Decryption error: {str(e)}")
+        except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Unexpected error during academic decryption: {str(e)}")
+        
+        academic_data = {
+                "id": academic["id"],
+                "nim": decrypted_json["nim"],
+                "name": decrypted_json["name"],
+                "courses": decrypted_json["courses"],
+                "ipk": decrypted_json["ipk"],
+                "signature": academic["signature"],
+                "created_at": academic["created_at"],
+                "created_by_usn": academic["created_by_usn"]
+        }
+        
+        pdf_buffer = generate_pdf(academic_data)
+        
+        pdf_content = pdf_buffer.getvalue()
+        
+        encrypted_content = rc4_encrypt(pdf_content, rc4_key)
+        
+        filename = f"encrypted_transcript_{academic_data['nim']}_{date.today().strftime('%Y%m%d')}.pdf.enc"
+        headers = {
+                'Content-Disposition': f'attachment; filename="{filename}"'
+        }
+        
+        return Response(
+                content=encrypted_content,
+                media_type="application/octet-stream",
+                headers=headers
+        )
+
+@app.post("/decrypt-rc4")
+async def decrypt_rc4_file(
+    file: UploadFile = File(...),
+    rc4_key: str = Form(...),
+    current_user = Depends(get_current_user)
+):
+        encrypted_content = await file.read()
+        
+        try:
+                decrypted_content = rc4_decrypt(encrypted_content, rc4_key)
+        except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Decryption error: {str(e)}")
+        
+        original_filename = file.filename
+        if original_filename.endswith('.enc'):
+                original_filename = original_filename[:-4]
+        
+        headers = {
+                'Content-Disposition': f'attachment; filename="{original_filename}"'
+        }
+        
+        return Response(
+                content=decrypted_content,
+                media_type="application/pdf" if original_filename.endswith('.pdf') else "application/octet-stream",
+                headers=headers
+        )
