@@ -13,6 +13,11 @@ import random
 import base64
 from keys_config import KAPRODI_RSA_KEYS
 
+# 256+ bit prime 
+P_SSSS = 115792089237316195423570985008687907853269984665640564039457584007913129639947
+SSSS_THRESHOLD_K = 3
+SSSS_NUM_SHARES_N = 6
+
 app = FastAPI()
 DATABASE = "database.db"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -151,17 +156,23 @@ def check_aes_hex(key_hex: str) -> bool:
                 return True
         except ValueError:
                 return False
-
+        
 def hex_to_int(hex_str: str) -> int:
         try:
                 return int(hex_str, 16)
         except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid hexadecimal string")
-        
-def int_to_hex(value: int) -> str:
-        if value < 0:
-                raise HTTPException(status_code=400, detail="Value must be non-negative")
-        return hex(value)[2:].zfill(64)
+                raise HTTPException(status_code=400, detail=f"Invalid hexadecimal string provided.")
+
+def format_aes_key_as_hex_str(value: int) -> str: # For formatting an int that IS an AES key
+    if value < 0:
+        raise HTTPException(status_code=400, detail="AES key value must be non-negative")
+    # 256-bit (32 bytes)
+    return hex(value)[2:].zfill(64)
+
+def general_int_to_hex_str(value: int) -> str:
+    if value < 0:
+        raise HTTPException(status_code=400, detail="Value must be non-negative for hex conversion")
+    return hex(value)[2:]
 
 def rsa_encrypt(data_int: int, public_key_tuple: Tuple[int, int]) -> int:
         e, n = public_key_tuple
@@ -176,6 +187,69 @@ def rsa_decrypt(encrypted_data_int: int, private_key_tuple: Tuple[int, int]) -> 
                 raise HTTPException(status_code=400, detail="Encrypted data must be numerically smaller than RSA modulus n")
         plaintext_int = pow(encrypted_data_int, d, n)
         return plaintext_int
+
+def extended_gcd(a, b):
+        if a == 0:
+                return b, 0, 1
+        gcd, x1, y1 = extended_gcd(b % a, a)
+        x = y1 - (b // a) * x1
+        y = x1
+        return gcd, x, y
+
+def mod_inverse(a, m):
+        d, x, y = extended_gcd(a, m)
+        if d != 1:
+                raise HTTPException(status_code=400, detail="Modular inverse does not exist")
+        return (x % m + m) % m
+
+def ssss_generate_shares(secret: int, n: int, k: int, prime: int, x_values: List[int]) -> List[Tuple[int, int]]:
+        if k <= 1 or n < k:
+                raise HTTPException(status_code=400, detail="Invalid parameters for Shamir's Secret Sharing")
+        if secret >= prime:
+                raise HTTPException(status_code=400, detail="Secret must be less than the prime modulus")
+        if len(x_values) != n:
+                raise HTTPException(status_code=400, detail="Number of x_values must match n")
+        if not all(0 < x < prime for x in x_values):
+                raise HTTPException(status_code=400, detail="All x_values must be in the range (0, prime)")
+        if len(set(x_values)) != n:
+                raise HTTPException(status_code=400, detail="x_values must be unique")
+        
+        coefficients = [secret] + [random.randint(0, prime - 1) for _ in range(k - 1)]
+        
+        shares = []
+        for x in x_values:
+                y = 0
+                for power, coeff in enumerate(coefficients):
+                        # coeff * (x ** power) % prime
+                        current_x_power = 1
+                        for _ in range(power):
+                                current_x_power = (current_x_power * x) % prime
+                        term = (coeff * current_x_power) % prime
+                        y = (y + term) % prime
+                shares.append((x, y))
+        return shares
+
+def ssss_reconstruct_secret(shares: List[Tuple[int, int]], prime: int) -> int:
+        if len(shares) < 2:
+                raise HTTPException(status_code=400, detail="At least two shares are required to reconstruct the secret")
+        if not all(0 < x < prime for x, _ in shares):
+                raise HTTPException(status_code=400, detail="All x_values in shares must be in the range (0, prime)")
+        if len(set(x for x, _ in shares)) != len(shares):
+                raise HTTPException(status_code=400, detail="x_values in shares must be unique")
+
+        secret = 0
+        for i, (x_i, y_i) in enumerate(shares):
+                numerator = 1
+                denominator = 1
+                for j, (x_j, _) in enumerate(shares):
+                        if i != j:
+                                numerator = (numerator * (-x_j)) % prime
+                                denominator = (denominator * (x_i - x_j)) % prime
+                denominator_inv = mod_inverse(denominator, prime)
+                term = (y_i * numerator * denominator_inv) % prime
+                secret = (secret + term) % prime    
+        return secret    
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -277,15 +351,19 @@ def input_academic(
         except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Unexpected error during encryption: {str(e)}")
         
-        # Encrypt AES key with RSA
-        major = current_user["major"]
-        if major not in KAPRODI_RSA_KEYS:
-                raise HTTPException(status_code=400, detail="Invalid major for encryption keys")
+        # Mahasiswa's major is used to determine the RSA keys
+        cursor = db.cursor()
+        cursor.execute("SELECT major FROM users WHERE username = ?", (academic_data.nim,))
+        major_row = cursor.fetchone()
+        if not major_row:
+                raise HTTPException(status_code=404, detail="Mahasiswa not found")
+        major = major_row["major"]
         public_key = KAPRODI_RSA_KEYS[major]["public"]
+
         try:
-                aes_key = hex_to_int(academic_data.aes_key_hex)
-                encrypted_aes_key = rsa_encrypt(aes_key, (public_key["e"], public_key["n"]))
-                encrypted_aes_key = int_to_hex(encrypted_aes_key)
+                aes_key_int = hex_to_int(academic_data.aes_key_hex)
+                encrypted_aes_key_int = rsa_encrypt(aes_key_int, (public_key["e"], public_key["n"]))
+                encrypted_aes_key_hex = general_int_to_hex_str(encrypted_aes_key_int)
         except Exception as e:
                 raise HTTPException(status_code=500, detail=f"RSA Encryption error: {str(e)}")
 
@@ -299,8 +377,8 @@ def input_academic(
         try:
                 hashed_data_int = hex_to_int(hashed_data)
                 private_key = KAPRODI_RSA_KEYS[major]["private"]
-                signature = rsa_encrypt(hashed_data_int, (private_key["d"], private_key["n"]))
-                signature = int_to_hex(signature)
+                signature_int = rsa_encrypt(hashed_data_int, (private_key["d"], private_key["n"]))
+                signature_hex = general_int_to_hex_str(signature_int)
         except ValueError as e:
                 raise HTTPException(status_code=400, detail=f"Invalid hash format: {str(e)}")
     
@@ -309,7 +387,7 @@ def input_academic(
                 cursor = db.cursor()
                 cursor.execute(
                         "INSERT INTO academics (nim, name, encrypted_data, encrypted_key, hashed_data, signature, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (academic_data.nim, academic_data.name, encrypted_data, encrypted_aes_key, hashed_data, signature, current_user["id"])
+                        (academic_data.nim, academic_data.name, encrypted_data, encrypted_aes_key_hex, hashed_data, signature_hex, current_user["id"])
                 )
                 academic_id = cursor.lastrowid
                 db.commit()
@@ -320,7 +398,7 @@ def input_academic(
                 "message": "academic saved successfully",
                 "academic_id": academic_id,
                 "ipk": ipk,
-                "signature": signature
+                "signature": signature_hex
         }
 
 @app.get("/academic/list")
@@ -401,9 +479,10 @@ def get_academic_detail(
                         raise HTTPException(status_code=400, detail="Invalid major for decryption keys")
                 private_key = KAPRODI_RSA_KEYS[major]["private"]
                 try:
-                        encrypted_aes_key = hex_to_int(academic["encrypted_key"])
-                        decrypted_aes_key = rsa_decrypt(encrypted_aes_key, (private_key["d"], private_key["n"]))
-                        academic["aes_key_hex"] = int_to_hex(decrypted_aes_key)
+                        encrypted_aes_key_int = hex_to_int(academic["encrypted_key"])
+                        decrypted_aes_key_int = rsa_decrypt(encrypted_aes_key_int, (private_key["d"], private_key["n"]))
+                        decrypted_aes_key_hex = format_aes_key_as_hex_str(decrypted_aes_key_int)
+                        academic["aes_key_hex"] = decrypted_aes_key_hex
                 except Exception as e:
                         raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
 
@@ -436,3 +515,121 @@ def get_academic_detail(
         }
 
         return response_json
+
+@app.get("/shamir/my_splits")
+def list_shamir_splits(
+        db: sqlite3.Connection = Depends(get_db),
+        current_user = Depends(require_role(["Dosen Wali"]))
+):
+        cursor = db.cursor()
+        cursor.execute(
+                """SELECT ss.id, ss.academic_id, a.nim as student_nim, a.name as student_name, 
+                        ss.share_x, ss.share_y, ss.prime, ss.threshold, ss.requested_by, ss.created_at 
+                FROM shamir_shares ss
+                JOIN academics a ON ss.academic_id = a.id
+                WHERE ss.dosen_wali_id = ?""", 
+                (current_user["id"],)
+        )
+        splits = cursor.fetchall()
+        
+        return {"splits": [dict(split) for split in splits]}
+
+@app.post("/shamir/request")
+def request_shamir_split(
+        academic_id: int,
+        db: sqlite3.Connection = Depends(get_db),
+        current_user = Depends(require_role(["Dosen Wali"]))
+):
+        cursor = db.cursor()
+        
+        cursor.execute("SELECT * FROM academics WHERE id = ?", (academic_id,))
+        academic = cursor.fetchone()
+        if not academic:
+                raise HTTPException(status_code=404, detail="Academic record not found")
+        
+        # Retrieve student's major
+        cursor.execute("SELECT major FROM users WHERE username = ?", (academic["nim"],))
+        student_info = cursor.fetchone()
+        if not student_info:
+                raise HTTPException(status_code=404, detail=f"Student with NIM {academic['nim']} not found")
+        student_major = student_info["major"]
+
+        if student_major not in KAPRODI_RSA_KEYS:
+                raise HTTPException(status_code=400, detail=f"RSA keys not configured for student's major: {student_major}")
+        
+        private_key_for_aes_decryption = KAPRODI_RSA_KEYS[student_major]["private"]
+        aes_key_hex_str_for_sharing: str
+        try:
+                encrypted_aes_key_int = hex_to_int(academic["encrypted_key"])
+                decrypted_aes_key_int = rsa_decrypt(encrypted_aes_key_int, (private_key_for_aes_decryption["d"], private_key_for_aes_decryption["n"]))
+                aes_key_hex_str_for_sharing = format_aes_key_as_hex_str(decrypted_aes_key_int) # USE CORRECT FORMATTER
+        except Exception as e:
+                print(f"Error decrypting AES key for SSS request (academic_id: {academic_id}): {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve or decrypt the AES key for sharing. Error: {str(e)}")
+
+        aes_key_int_for_ssss = hex_to_int(aes_key_hex_str_for_sharing)
+        if aes_key_int_for_ssss >= P_SSSS: 
+            raise HTTPException(status_code=400, detail="AES key (as integer) is too large for SSSS with the chosen prime.")
+
+        num_other_dosen_needed = SSSS_NUM_SHARES_N - 1
+
+        # Select other Dosen Wali (excluding the current user)
+        # Assumption: any major have same key
+        cursor.execute(
+            "SELECT id FROM users WHERE role = 'Dosen Wali' AND id != ?", 
+            (current_user["id"],)
+        )
+        other_dosen_wali_rows = cursor.fetchall()
+        
+        if len(other_dosen_wali_rows) < num_other_dosen_needed:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Not enough other Dosen Wali to generate {SSSS_NUM_SHARES_N} shares. "
+                       f"Need {num_other_dosen_needed} others, found {len(other_dosen_wali_rows)}."
+            )
+
+        selected_other_dosen_ids = [dw["id"] for dw in random.sample(other_dosen_wali_rows, num_other_dosen_needed)]
+        
+        dosen_wali_ids_as_x_values = [current_user["id"]] + selected_other_dosen_ids
+        if len(set(dosen_wali_ids_as_x_values)) != SSSS_NUM_SHARES_N:
+            raise HTTPException(status_code=500, detail="Failed to select a unique set of Dosen Wali for shares.")
+        
+        shares_generated_tuples: List[Tuple[int, int]]
+        try:
+            shares_generated_tuples = ssss_generate_shares(
+                    secret=aes_key_int_for_ssss,
+                    n=SSSS_NUM_SHARES_N,
+                    k=SSSS_THRESHOLD_K,
+                    prime=P_SSSS,
+                    x_values=dosen_wali_ids_as_x_values # DOSEN WALI IDs AS X_VALUES
+            )
+        except HTTPException as he: 
+            raise he 
+        except Exception as e: 
+            print(f"Unexpected error during ssss_generate_shares for academic_id {academic_id}: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error generating SSS shares: {str(e)}")
+
+        my_share_details_for_response = None
+        try:
+            for x_coordinate_dosen_id, y_coordinate_as_int in shares_generated_tuples:
+                share_y_as_hex = general_int_to_hex_str(y_coordinate_as_int) 
+                
+                cursor.execute(
+                        """INSERT INTO shamir_shares 
+                           (academic_id, dosen_wali_id, prime, threshold, share_x, share_y, requested_by) 
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (academic_id, x_coordinate_dosen_id, str(P_SSSS), SSSS_THRESHOLD_K, x_coordinate_dosen_id, share_y_as_hex, current_user["id"])
+                )
+                if x_coordinate_dosen_id == current_user["id"]:
+                    my_share_details_for_response = {"share_x": x_coordinate_dosen_id, "share_y_hex": share_y_as_hex}
+            db.commit()
+        except sqlite3.Error as e:
+            db.rollback() 
+            raise HTTPException(status_code=500, detail=f"Database error inserting SSS shares: {str(e)}")
+        
+        return {
+            "message": "Shamir's Secret Sharing split created successfully", 
+            "my_share": my_share_details_for_response, 
+            "academic_id": academic_id,
+            "shares_distributed_to_dosen_ids": dosen_wali_ids_as_x_values
+        }
