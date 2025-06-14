@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, Response, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, Depends, Query, Request, Response, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
@@ -13,10 +13,6 @@ import random
 import base64
 from keys_config import KAPRODI_RSA_KEYS
 
-# 256+ bit prime 
-P_SSSS = 115792089237316195423570985008687907853269984665640564039457584007913129639947
-SSSS_THRESHOLD_K = 3
-SSSS_NUM_SHARES_N = 6
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -26,6 +22,11 @@ from io import BytesIO
 from fastapi.responses import StreamingResponse
 import os
 from datetime import date
+
+# 256+ bit prime 
+P_SSSS = 115792089237316195423570985008687907853269984665640564039457584007913129639947
+SSSS_THRESHOLD_K = 3
+SSSS_NUM_SHARES_N = 6
 
 app = FastAPI()
 DATABASE = "database.db"
@@ -61,6 +62,13 @@ class AcademicInput(BaseModel):
         name: str
         courses: list[Course]
         aes_key_hex: str
+
+class SSSShareInput(BaseModel):
+        x: int
+        y: str
+
+class SSSReconstructionInput(BaseModel):
+        shares: List[SSSShareInput]
         
 def get_db():
         db = sqlite3.connect(DATABASE, check_same_thread=False)
@@ -259,7 +267,6 @@ def ssss_reconstruct_secret(shares: List[Tuple[int, int]], prime: int) -> int:
                 secret = (secret + term) % prime    
         return secret    
 
-
 @app.on_event("startup")
 async def startup_event():
         init_db()
@@ -418,19 +425,24 @@ def list_academics(
         cursor = db.cursor()
 
         base_query = "SELECT t.id, t.nim, t.name, t.created_at, u.username AS created_by_usn FROM academics t JOIN users u ON t.created_by = u.id"
-        
+        print("current_user role:", current_user["role"])
         try:
                 if current_user["role"] == "Mahasiswa":
                         # Students can only see their own academic
                         cursor.execute(f"{base_query} WHERE t.nim = ?", (current_user["username"],))
-                elif current_user["role"] == "Dosen Wali" or current_user["role"] == "Dosen Wali":
+                elif current_user["role"] == "Dosen Wali" or current_user["role"] == "Ketua Program Studi":
                         # Dosen Wali and Ketua Program Studi can list all academics
-                        cursor.execute(f"{base_query} WHERE t.created_by = ?", (current_user["id"],))
+                        if current_user["major"] == "STI":
+                                base_query += " WHERE t.nim LIKE '1822%'"
+                                cursor.execute(f"{base_query}")
+                        elif current_user["major"] == "IF":
+                                base_query += " WHERE t.nim LIKE '1352%'"
+                                cursor.execute(f"{base_query}")
                 else:
                         raise HTTPException(status_code=403, detail="Insufficient permissions to view academics")
         except sqlite3.Error as e:
                 raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-            
+
         academics = cursor.fetchall()
 
         return {"academics": [dict(t) for t in academics]}
@@ -478,8 +490,7 @@ def get_academic_detail(
 
                 # Viewing other academics requires SSS
                 elif academic["created_by_usn"] != current_user["username"] :
-                        # TODO: implement SSS
-                        raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key")
+                        raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key. Please refer to SSS")
         
         elif current_user["role"] == "Ketua Program Studi":
                 # Decrypt AES key using private RSA key
@@ -524,6 +535,125 @@ def get_academic_detail(
         }
 
         return response_json
+
+@app.post("/academic/{academic_id}/view-sss")
+def get_academic_detail_with_sss(
+        academic_id: int,
+        reconstruction_input: SSSReconstructionInput, 
+        db: sqlite3.Connection = Depends(get_db),
+        current_user = Depends(require_role(["Dosen Wali"])) 
+):
+        cursor = db.cursor()
+        cursor.execute(
+                """SELECT t.id, t.nim, t.name, t.encrypted_data, t.encrypted_key, 
+                        t.hashed_data, t.signature, t.created_at, 
+                        u.username AS created_by_usn, t.created_by AS creator_id 
+                FROM academics t 
+                JOIN users u ON t.created_by = u.id 
+                WHERE t.id = ?""",
+                (academic_id,)
+        )       
+        academic_row = cursor.fetchone()
+
+        if not academic_row:
+                raise HTTPException(status_code=404, detail="Academic record not found")
+                
+        academic = dict(academic_row)
+        decrypted_aes_key_to_use: Optional[str] = None
+
+        # SSS Reconstruction logic
+        if not reconstruction_input or not reconstruction_input.shares:
+                raise HTTPException(status_code=400, detail="SSS shares must be provided for reconstruction.")
+
+        cursor.execute(
+                "SELECT prime, threshold FROM shamir_shares WHERE academic_id = ? LIMIT 1",
+                (academic_id,)
+        )
+        share_params_row = cursor.fetchone()
+
+        if not share_params_row:
+                raise HTTPException(status_code=404, detail="SSS parameters not found for this academic record. Cannot reconstruct.")
+        
+        prime_ssss_str = share_params_row["prime"]
+        threshold_ssss = share_params_row["threshold"]
+        
+        try:
+                prime_ssss_int = int(prime_ssss_str)
+        except ValueError:
+                raise HTTPException(status_code=500, detail="Invalid prime stored for SSS.")
+
+        if len(reconstruction_input.shares) < threshold_ssss:
+                raise HTTPException(status_code=400, detail=f"Insufficient shares provided for SSS. Need {threshold_ssss}, got {len(reconstruction_input.shares)}.")
+
+        prepared_shares_for_ssss: List[Tuple[int, int]] = []
+        for s_in in reconstruction_input.shares: 
+                try:
+                        share_y_int = hex_to_int(s_in.y) # Use s_in.y as per your model
+                        # Validate x value (s_in.x) against prime
+                        if not (0 < s_in.x < prime_ssss_int): 
+                                raise ValueError(f"Share x-value {s_in.x} is out of valid range for prime.")
+                        prepared_shares_for_ssss.append((s_in.x, share_y_int)) # Use s_in.x
+                except ValueError as ve:
+                        raise HTTPException(status_code=400, detail=f"Invalid share format for x={s_in.x}: {str(ve)}")
+                except HTTPException as he: 
+                        raise he
+        
+        try:
+                reconstructed_aes_key_int = ssss_reconstruct_secret(prepared_shares_for_ssss, prime_ssss_int)
+                decrypted_aes_key_to_use = format_aes_key_as_hex_str(reconstructed_aes_key_int)
+        except HTTPException as he_reconstruct:
+                raise he_reconstruct 
+        except Exception as e_reconstruct:
+                print(f"Unexpected SSS Key reconstruction error: {e_reconstruct}")
+                raise HTTPException(status_code=500, detail=f"SSS Key reconstruction failed: {str(e_reconstruct)}")
+
+        # --- Decrypt academic data if key is available ---
+        decrypted_json_content = None
+        if decrypted_aes_key_to_use:
+                try:
+                        decrypted_data_str = decrypt_aes_cbc(academic["encrypted_data"], decrypted_aes_key_to_use)
+                        decrypted_json_content = json.loads(decrypted_data_str)
+                except ValueError as e_decrypt:
+                        print(f"AES Decryption or JSON parsing error for academic_id {academic_id}: {str(e_decrypt)}")
+                        decrypted_json_content = {"error_decrypting": f"AES Decryption/JSON parsing failed: {str(e_decrypt)}"}
+                except Exception as e_decrypt_unexpected:
+                        print(f"Unexpected error during academic decryption for academic_id {academic_id}: {str(e_decrypt_unexpected)}")
+                        decrypted_json_content = {"error_decrypting": f"Unexpected decryption error: {str(e_decrypt_unexpected)}"}
+        else:
+                # This should ideally not be reached if SSS reconstruction was attempted and failed, as it would have raised an error.
+                # But as a fallback:
+                decrypted_json_content = {"error_decrypting": "AES key reconstruction failed or key not obtained."}
+                
+        # --- Prepare response ---
+        cursor.execute("SELECT major FROM users WHERE username = ?", (academic["nim"],))
+        student_user_row_for_key = cursor.fetchone()
+        student_major_for_kaprodi_key = student_user_row_for_key["major"] if student_user_row_for_key else None
+
+        kaprodi_public_key_for_response = None
+        if student_major_for_kaprodi_key and student_major_for_kaprodi_key in KAPRODI_RSA_KEYS:
+                pub_key_obj = KAPRODI_RSA_KEYS[student_major_for_kaprodi_key]['public']
+                kaprodi_public_key_for_response = {
+                "e": str(pub_key_obj['e']),
+                "n": str(pub_key_obj['n']) if pub_key_obj['n'] is not None else None
+                }
+
+        response_payload = {
+                "id": academic["id"],
+                "nim": decrypted_json_content.get("nim") if decrypted_json_content and "error_decrypting" not in decrypted_json_content else academic["nim"],
+                "name": decrypted_json_content.get("name") if decrypted_json_content and "error_decrypting" not in decrypted_json_content else academic.get("name", "N/A"),
+                "courses": decrypted_json_content.get("courses") if decrypted_json_content and "error_decrypting" not in decrypted_json_content else None,
+                "ipk": decrypted_json_content.get("ipk") if decrypted_json_content and "error_decrypting" not in decrypted_json_content else None,
+                "hashed_data": academic.get("hashed_data"),
+                "signature": academic.get("signature"),
+                "kaprodi_public_key": kaprodi_public_key_for_response,
+                "created_at": academic.get("created_at"),
+                "created_by_usn": academic.get("created_by_usn"),
+                "decryption_status": "success" if decrypted_json_content and "error_decrypting" not in decrypted_json_content else "failed"
+        }
+        if decrypted_json_content and "error_decrypting" in decrypted_json_content:
+                response_payload["decryption_error_detail"] = decrypted_json_content["error_decrypting"]
+        
+        return response_payload
 
 def generate_pdf(academic_data):
         buffer = BytesIO()
@@ -646,7 +776,7 @@ def get_academic_pdf(
                 try:
                         encrypted_aes_key = hex_to_int(academic["encrypted_key"])
                         decrypted_aes_key = rsa_decrypt(encrypted_aes_key, (private_key["d"], private_key["n"]))
-                        academic["aes_key_hex"] = int_to_hex(decrypted_aes_key)
+                        academic["aes_key_hex"] = format_aes_key_as_hex_str(decrypted_aes_key)
                 except Exception as e:
                         raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
 
@@ -749,7 +879,7 @@ def get_encrypted_academic_pdf(
                 try:
                         encrypted_aes_key = hex_to_int(academic["encrypted_key"])
                         decrypted_aes_key = rsa_decrypt(encrypted_aes_key, (private_key["d"], private_key["n"]))
-                        academic["aes_key_hex"] = int_to_hex(decrypted_aes_key)
+                        academic["aes_key_hex"] = format_aes_key_as_hex_str(decrypted_aes_key)
                 except Exception as e:
                         raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
 
@@ -834,7 +964,7 @@ def list_shamir_splits(
         
         return {"splits": [dict(split) for split in splits]}
 
-@app.post("/shamir/request")
+@app.post("/shamir/request_split/{academic_id}")
 def request_shamir_split(
         academic_id: int,
         db: sqlite3.Connection = Depends(get_db),
