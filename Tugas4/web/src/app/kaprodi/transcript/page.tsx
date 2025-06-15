@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 export default function TranscriptPage() {
     const router = useRouter();
-    const [transkrip, setTranskrip] = useState(null);
+    const [transkrip, setTranskrip] = useState<any>(null);
     const [encryptPdf, setEncryptPdf] = useState(false);
     const [encryptionKey, setEncryptionKey] = useState("");
     const [aesKey, setAesKey] = useState("");
@@ -65,7 +65,7 @@ export default function TranscriptPage() {
     }, []);
 
     const handleDownload = async () => {
-        if (!transkrip) return;
+        if (!transkrip || !transkrip.id) return;
 
         let baseUrl = "http://localhost:8000";
 

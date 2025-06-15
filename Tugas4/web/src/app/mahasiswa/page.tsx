@@ -11,7 +11,7 @@ import Link from "next/link";
 export default function Mahasiswa() {
     const [decryptionKey, setDecryptionKey] = useState("");
     const [academicId, setAcademicId] = useState<number | null>(null);
-    const [transkrip, setTranskrip] = useState(null);
+    const [transkrip, setTranskrip] = useState<any>(null);
     const [error, setError] = useState("");
     const [username, setUsername] = useState("Mahasiswa");
     const [aesKey, setAesKey] = useState("");
