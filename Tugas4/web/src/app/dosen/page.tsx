@@ -38,7 +38,21 @@ export default function Dosen() {
             });
     }, []);
 
-    const handleView = async (academicId: number) => {
+    const handleView = async (
+        academicId: number,
+        createdByUsn: string,
+        name: string,
+        nim: string
+    ) => {
+        if (createdByUsn !== username) {
+            router.push(
+                `/dosen/request?academic_id=${academicId}&name=${encodeURIComponent(
+                    name
+                )}&nim=${nim}`
+            );
+            return;
+        }
+
         try {
             const res = await fetch(
                 `http://localhost:8000/academic/${academicId}`,
@@ -117,6 +131,8 @@ export default function Dosen() {
                                     duration: 0.4,
                                     ease: "easeOut",
                                 }}
+                                initial={{ opacity: 0, y: 40, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
                             >
                                 <Card className="bg-white/5 text-white backdrop-blur-sm border border-white/10 ring-1 ring-white/5">
                                     <CardContent className="flex flex-col justify-center items-center space-y-1">
@@ -131,7 +147,14 @@ export default function Dosen() {
                                             {item.created_by_usn}
                                         </p>
                                         <Button
-                                            onClick={() => handleView(item.id)}
+                                            onClick={() =>
+                                                handleView(
+                                                    item.id,
+                                                    item.created_by_usn,
+                                                    item.name,
+                                                    item.nim
+                                                )
+                                            }
                                             className="mt-2 text-black font-semibold bg-[#23DF79] hover:bg-[#1ebf68] transition"
                                         >
                                             Lihat Transkrip
