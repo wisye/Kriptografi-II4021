@@ -81,37 +81,87 @@ def get_db():
 def init_db():
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
-        
+        print("Initializing database...")
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
         if cursor.fetchone() is None:
                 with open("schema.sql", "r") as f:
                         conn.executescript(f.read())
                 conn.commit()
-                
+             
                 # Buat testing
                 default_users = [
-                        ("admin_if", pwd_context.hash("password123"), "Ketua Program Studi", "IF"),
-                        ("admin_sti", pwd_context.hash("password123"), "Ketua Program Studi", "STI"),
-                        ("dosen1", pwd_context.hash("password123"), "Dosen Wali", "STI"),
-                        ("dosen2", pwd_context.hash("password123"), "Dosen Wali", "IF"),
-                        ("dosen3", pwd_context.hash("password123"), "Dosen Wali", "STI"),
-                        ("dosen4", pwd_context.hash("password123"), "Dosen Wali", "IF"),
-                        ("dosen5", pwd_context.hash("password123"), "Dosen Wali", "STI"),
-                        ("dosen6", pwd_context.hash("password123"), "Dosen Wali", "IF"),
-                        ("dosen7", pwd_context.hash("password123"), "Dosen Wali", "STI"),
-                        ("18222001", pwd_context.hash("password123"), "Mahasiswa", "STI"),
-                        ("18222002", pwd_context.hash("password123"), "Mahasiswa", "STI"),
-                        ("18222003", pwd_context.hash("password123"), "Mahasiswa", "STI"),
-                        ("13522001", pwd_context.hash("password123"), "Mahasiswa", "IF"),
-                        ("13522002", pwd_context.hash("password123"), "Mahasiswa", "IF"),
-                        ("13522003", pwd_context.hash("password123"), "Mahasiswa", "IF"),
+                        # Kaprodi
+                        ("Kaprodi_IF", pwd_context.hash("qwe"), "Ketua Program Studi", "IF"),
+                        ("Kaprodi_STI", pwd_context.hash("qwe"), "Ketua Program Studi", "STI"),
+
+                        # Dosen Wali
+                        ("Dosen_IF_1", pwd_context.hash("qwe"), "Dosen Wali", "IF"),
+                        ("Dosen_IF_2", pwd_context.hash("qwe"), "Dosen Wali", "IF"),
+                        ("Dosen_IF_3", pwd_context.hash("qwe"), "Dosen Wali", "IF"),
+                        ("Dosen_IF_4", pwd_context.hash("qwe"), "Dosen Wali", "IF"),
+                        ("Dosen_IF_5", pwd_context.hash("qwe"), "Dosen Wali", "IF"),
+                        ("Dosen_IF_6", pwd_context.hash("qwe"), "Dosen Wali", "IF"),
+                        ("Dosen_IF_7", pwd_context.hash("qwe"), "Dosen Wali", "IF"),
+
+                        ("Dosen_STI_1", pwd_context.hash("qwe"), "Dosen Wali", "STI"),
+                        ("Dosen_STI_2", pwd_context.hash("qwe"), "Dosen Wali", "STI"),
+                        ("Dosen_STI_3", pwd_context.hash("qwe"), "Dosen Wali", "STI"),
+                        ("Dosen_STI_4", pwd_context.hash("qwe"), "Dosen Wali", "STI"),
+                        ("Dosen_STI_5", pwd_context.hash("qwe"), "Dosen Wali", "STI"),
+                        ("Dosen_STI_6", pwd_context.hash("qwe"), "Dosen Wali", "STI"),
+                        ("Dosen_STI_7", pwd_context.hash("qwe"), "Dosen Wali", "STI"),
+
+                        # Mahasiswa
+                        ("18222001", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222002", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222003", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222004", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222005", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222006", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222007", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222008", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222009", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222010", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222011", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222012", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222013", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222014", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222015", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222016", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222017", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222018", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222019", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222020", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+                        ("18222021", pwd_context.hash("qwe"), "Mahasiswa", "STI"),
+
+                        ("13522001", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522002", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522003", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522004", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522005", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522006", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522007", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522008", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522009", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522010", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522011", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522012", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522013", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522014", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522015", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522016", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522017", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522018", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522019", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522020", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
+                        ("13522021", pwd_context.hash("qwe"), "Mahasiswa", "IF"),
                 ]
-                
                 cursor.executemany(
                         "INSERT INTO users (username, password, role, major) VALUES (?, ?, ?, ?)",
                         default_users
                 )
                 conn.commit()
+                print("Database schema created successfully.")
         conn.close()
 
 def get_current_user(request: Request, db: sqlite3.Connection = Depends(get_db)):

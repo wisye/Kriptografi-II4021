@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 export default function Dosen() {
     const router = useRouter();
     const [transkripList, setTranskripList] = useState([]);
+    const [mabaList, setMabaList] = useState([]); // ✅ STATE UNTUK MABA
     const [username, setUsername] = useState("");
 
     useEffect(() => {
@@ -18,12 +19,22 @@ export default function Dosen() {
             setUsername(parsed.username);
         }
 
+        // Fetch Transkrip
         fetch("http://localhost:8000/academic/list", {
             credentials: "include",
         })
             .then((res) => res.json())
             .then((data) => {
                 if (data.academics) setTranskripList(data.academics);
+            });
+
+        // ✅ Fetch Mahasiswa Baru
+        fetch("http://localhost:8000/user/list_maba", {
+            credentials: "include",
+        })
+            .then((res) => res.json())
+            .then((data) => {
+                if (data.maba_list) setMabaList(data.maba_list);
             });
     }, []);
 
@@ -76,6 +87,7 @@ export default function Dosen() {
             </div>
 
             <div className="flex flex-col gap-4 max-w-3xl mx-auto">
+                {/* ✅ Tampilkan Transkrip */}
                 {transkripList.map((item: any) => (
                     <Card
                         key={item.id}
@@ -90,6 +102,52 @@ export default function Dosen() {
                         </CardContent>
                     </Card>
                 ))}
+
+                {/* ✅ Tampilkan MABA */}
+                {mabaList.length > 0 && (
+                    <div className="mt-10">
+                        <h2 className="text-2xl font-semibold text-white text-center mb-4">
+                            Mahasiswa Baru Tanpa Transkrip
+                        </h2>
+                        <motion.div
+                            initial="hidden"
+                            animate="visible"
+                            variants={{
+                                visible: {
+                                    transition: {
+                                        staggerChildren: 0.15,
+                                    },
+                                },
+                            }}
+                            className="flex flex-col gap-4"
+                        >
+                            {mabaList.map((maba: any, index: number) => (
+                                <motion.div
+                                    key={index}
+                                    variants={{
+                                        hidden: { opacity: 0, y: 20 },
+                                        visible: { opacity: 1, y: 0 },
+                                    }}
+                                    transition={{
+                                        duration: 0.4,
+                                        ease: "easeOut",
+                                    }}
+                                >
+                                    <Card className="bg-white/5 text-white backdrop-blur-sm border border-white/10 ring-1 ring-white/5">
+                                        <CardContent className="flex flex-col justify-center items-center space-y-1">
+                                            <p className="font-bold text-xl">
+                                                {maba.username}
+                                            </p>
+                                            <p className="text-white/70">
+                                                Prodi: {maba.major}
+                                            </p>
+                                        </CardContent>
+                                    </Card>
+                                </motion.div>
+                            ))}
+                        </motion.div>
+                    </div>
+                )}
             </div>
         </div>
     );
