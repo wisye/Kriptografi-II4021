@@ -59,6 +59,8 @@ export default function Create() {
             return;
         }
 
+        const hashedKey = sha256(aesKey).toString();
+
         const coursePayload = courseList.map((c, i) => ({
             course_code: c.code,
             course_name: c.name,
@@ -69,11 +71,11 @@ export default function Create() {
         const payload = {
             nim,
             name,
-            aes_key_hex: aesKey,
+            aes_key_hex: hashedKey,
             courses: coursePayload,
         };
+
         try {
-            console.log("Payload:", payload);
             const res = await fetch("http://localhost:8000/academic/input", {
                 method: "POST",
                 headers: {
@@ -82,13 +84,58 @@ export default function Create() {
                 credentials: "include",
                 body: JSON.stringify(payload),
             });
-            console.log("Body: ", JSON.stringify(payload));
+
             const result = await res.json();
+
             if (res.ok) {
-                alert("Transkrip berhasil ditambahkan!");
-                router.push("/dosen");
+                const academicId = result.academic_id;
+
+                // 🔑 Call Shamir Split
+                try {
+                    const shamirRes = await fetch(
+                        `http://localhost:8000/shamir/request_split/${academicId}`,
+                        {
+                            method: "POST",
+                            credentials: "include",
+                        }
+                    );
+
+                    const shamirResult = await shamirRes.json();
+
+                    if (shamirRes.ok) {
+                        const shareX = shamirResult.my_share?.share_x;
+                        const shareY = shamirResult.my_share?.share_y_hex;
+                        const receivers =
+                            shamirResult.receiving_dosen_wali_usernames;
+                        const pembimbing =
+                            shamirResult.mahasiswa_dosen_wali_username;
+
+                        const message = `
+✅ Transkrip & Shamir's Split berhasil disimpan!
+
+🔐 Potongan Kunci Anda (My Share):
+  • x = ${shareX}
+  • y = ${shareY}
+
+👥 Dosen Wali Penerima Kunci:
+  • ${receivers.join("\n  • ")}
+
+👨‍🏫 Dosen Pembimbing Mahasiswa: ${pembimbing}
+                    `;
+
+                        alert(message);
+                        router.push("/dosen");
+                    } else {
+                        alert(
+                            "Gagal melakukan Shamir Split:\n" +
+                                shamirResult.detail
+                        );
+                    }
+                } catch (e) {
+                    alert("Gagal memanggil API Shamir Split.");
+                }
             } else {
-                alert("Gagal: " + result.detail);
+                alert("Gagal menyimpan transkrip:\n" + result.detail);
             }
         } catch (error) {
             alert("Gagal mengirim data.");

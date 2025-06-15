@@ -64,7 +64,7 @@ export default function Dosen() {
     };
 
     return (
-        <div className="min-h-screen px-4 py-10 bg-gradient-to-br from-gray-950 to-gray-900 text-white">
+        <div className="min-h-screen px-4 py-10 bg-gradient-to-br justify-center from-gray-950 to-gray-900 text-white">
             <motion.h1
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -74,7 +74,13 @@ export default function Dosen() {
                 {getJudul()}
             </motion.h1>
 
-            <div className="flex justify-center mb-8">
+            <div className="flex flex-col items-center space-y-4 justify-center mb-8">
+                <Button
+                    className="text-white w-96 font-semibold bg-blue-500 hover:bg-blue-600"
+                    onClick={() => router.push("/dosen/keylist")}
+                >
+                    Key List
+                </Button>
                 <Button
                     className="text-white w-96 font-semibold bg-[#DF2389] hover:bg-[#c31c75] transition"
                     onClick={() => {

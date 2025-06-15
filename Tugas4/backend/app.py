@@ -1156,7 +1156,7 @@ def request_shamir_split(
                         """INSERT INTO shamir_shares 
                            (academic_id, dosen_wali_id, prime, threshold, share_x, share_y, requested_by) 
                            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                        (academic_id, x_coordinate_dosen_id, str(P_SSSS), SSSS_THRESHOLD_K, x_coordinate_dosen_id, share_y_as_hex, current_user["id"])
+                        (academic_id, x_coordinate_dosen_id, str(P_SSSS), SSSS_THRESHOLD_K, x_coordinate_dosen_id, share_y_as_hex, current_user["username"])
                 )
                 if x_coordinate_dosen_id == current_user["id"]:
                     my_share_details_for_response = {"share_x": x_coordinate_dosen_id, "share_y_hex": share_y_as_hex}
