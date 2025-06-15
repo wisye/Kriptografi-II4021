@@ -72,7 +72,7 @@ export default function DecryptPDFPage() {
                                 onChange={(e) =>
                                     setFile(e.target.files?.[0] || null)
                                 }
-                                className="bg-white/10 text-white font-normal"
+                                className="bg-white/10 font-normal text-white"
                             />
                             <div className="flex flex-col gap-1 relative">
                                 <Input
@@ -90,7 +90,6 @@ export default function DecryptPDFPage() {
                                     {showKey ? "Hide" : "Show"}
                                 </button>
                             </div>
-
                             <Button
                                 onClick={handleDecryptDownload}
                                 className="w-full text-white font-semibold bg-[#DF2389] hover:bg-[#c31c75] transition"
@@ -99,9 +98,9 @@ export default function DecryptPDFPage() {
                             </Button>
                             <Button
                                 className="text-black items-center justify-center font-semibold w-full bg-[#23DF79] hover:bg-[#1ebf68] transition"
-                                onClick={() => router.push("/mahasiswa")}
+                                onClick={() => router.push("/kaprodi")}
                             >
-                                Kembali ke Halaman Mahasiswa
+                                Kembali ke Halaman Kaprodi
                             </Button>
                             {error && (
                                 <p className="text-red-400 text-sm text-center">

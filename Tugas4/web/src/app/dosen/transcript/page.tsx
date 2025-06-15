@@ -10,10 +10,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 export default function TranscriptPage() {
     const router = useRouter();
-    const [transkrip, setTranskrip] = useState(null);
+    const [transkrip, setTranskrip] = useState<any>(null);
     const [encryptPdf, setEncryptPdf] = useState(false);
     const [encryptionKey, setEncryptionKey] = useState("");
     const [aesKey, setAesKey] = useState("");
+    const [verifikasiStatus, setVerifikasiStatus] = useState<
+        "loading" | "verified" | "not-verified" | null
+    >("loading");
 
     useEffect(() => {
         const stored = localStorage.getItem("transkrip");
@@ -28,6 +31,38 @@ export default function TranscriptPage() {
         }
 
         console.log("Transcript data and AES key loaded");
+    }, []);
+
+    useEffect(() => {
+        const verifySignature = async () => {
+            try {
+                const stored = localStorage.getItem("transkrip");
+                if (!stored) return;
+
+                const parsed = JSON.parse(stored);
+                const hashed = BigInt(`0x${parsed.hashed_data}`);
+                const signature = BigInt(`0x${parsed.signature}`);
+                const e = BigInt(parsed.kaprodi_public_key.e);
+                const n = BigInt(parsed.kaprodi_public_key.n);
+                const decrypted = signature ** e % n;
+                console.log("=========================");
+                console.log("Hashed Data:", hashed);
+                console.log("Decrypted Signature:", decrypted);
+                console.log("Signature:", signature);
+                console.log("Public Key (e, n):", e, n);
+
+                if (decrypted === hashed) {
+                    setVerifikasiStatus("verified");
+                } else {
+                    setVerifikasiStatus("not-verified");
+                }
+            } catch (e) {
+                console.error("Verification failed:", e);
+                setVerifikasiStatus("not-verified");
+            }
+        };
+
+        setTimeout(verifySignature, 100); // lazy loading async
     }, []);
 
     const handleDownload = async () => {
@@ -85,6 +120,7 @@ export default function TranscriptPage() {
                                 Laporan Transkrip {transkrip.name} :{" "}
                                 {transkrip.nim}
                             </h2>
+
                             <table className="min-w-full text-sm text-white border border-white">
                                 <thead className="bg-white/10">
                                     <tr>
@@ -137,6 +173,25 @@ export default function TranscriptPage() {
                                     </tr>
                                 </tbody>
                             </table>
+
+                            <div>
+                                <p className="text-white font-semibold">
+                                    Status Digital Signature:{" "}
+                                    {verifikasiStatus === "loading" ? (
+                                        <span className="text-yellow-400 animate-pulse">
+                                            Verifying...
+                                        </span>
+                                    ) : verifikasiStatus === "verified" ? (
+                                        <span className="text-green-400">
+                                            ✅ Verified
+                                        </span>
+                                    ) : (
+                                        <span className="text-red-400">
+                                            ❌ Not Verified
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
 
                             <div className="space-y-2">
                                 <label className="flex items-center space-x-2">
