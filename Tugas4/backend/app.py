@@ -635,11 +635,24 @@ def get_academic_detail_with_sss(
                 raise HTTPException(status_code=404, detail="Academic record not found")
                 
         academic = dict(academic_row)
+        creator_id = academic["creator_id"]
         decrypted_aes_key_to_use: Optional[str] = None
 
         # SSS Reconstruction logic
         if not reconstruction_input or not reconstruction_input.shares:
                 raise HTTPException(status_code=400, detail="SSS shares must be provided for reconstruction.")
+
+        # Check if the creator's share is provided
+        creator_share_provided = False
+        for share in reconstruction_input.shares:
+                if share.x == creator_id:
+                        creator_share_provided = True
+                        break
+        if not creator_share_provided:
+                cursor.execute("SELECT username FROM users WHERE id = ?", (creator_id,))
+                creator_user_row = cursor.fetchone()
+                creator_username = creator_user_row["username"] if creator_user_row else "Unknown Creator"
+                raise HTTPException(status_code=400, detail=f"Creator's share is required for SSS reconstruction. Creator: {creator_username}")
 
         cursor.execute(
                 "SELECT prime, threshold FROM shamir_shares WHERE academic_id = ? LIMIT 1",
@@ -655,9 +668,9 @@ def get_academic_detail_with_sss(
         
         try:
                 prime_ssss_int = int(prime_ssss_str)
-                print(f"DEBUG: academic_id={academic_id}, Fetched prime_ssss_str from DB: '{prime_ssss_str}'") # ADD THIS
-                print(f"DEBUG: Converted prime_ssss_int: {prime_ssss_int}")
-                print(f"DEBUG: Global P_SSSS: {P_SSSS}") 
+                # print(f"DEBUG: academic_id={academic_id}, Fetched prime_ssss_str from DB: '{prime_ssss_str}'") # ADD THIS
+                # print(f"DEBUG: Converted prime_ssss_int: {prime_ssss_int}")
+                # print(f"DEBUG: Global P_SSSS: {P_SSSS}") 
         except ValueError:
                 raise HTTPException(status_code=500, detail="Invalid prime stored for SSS.")
 
@@ -1094,13 +1107,16 @@ def request_shamir_split(
         if aes_key_int_for_ssss >= P_SSSS: 
             raise HTTPException(status_code=400, detail="AES key (as integer) is too large for SSSS with the chosen prime.")
 
-        num_other_dosen_needed = SSSS_NUM_SHARES_N - 1
+        # Selected dosen wali: requester, mahasiswa's dosen wali, and 4 other dosen wali
+        # Assumption: the same major only
+        requester_id = current_user["id"]
+        creator_id = academic["created_by"]
+        selected_dosen_ids = set([requester_id, creator_id]) 
+        num_other_dosen_needed = SSSS_NUM_SHARES_N - len(selected_dosen_ids)
 
-        # Select other Dosen Wali (excluding the current user)
-        # Assumption: any major have same key
         cursor.execute(
-            "SELECT id FROM users WHERE role = 'Dosen Wali' AND id != ?", 
-            (current_user["id"],)
+                f"SELECT id FROM users WHERE role = 'Dosen Wali' AND major = ? AND id NOT IN ({','.join('?' for _ in selected_dosen_ids)})",
+                (student_major, *selected_dosen_ids)
         )
         other_dosen_wali_rows = cursor.fetchall()
         
@@ -1112,8 +1128,9 @@ def request_shamir_split(
             )
 
         selected_other_dosen_ids = [dw["id"] for dw in random.sample(other_dosen_wali_rows, num_other_dosen_needed)]
-        
-        dosen_wali_ids_as_x_values = [current_user["id"]] + selected_other_dosen_ids
+        selected_dosen_ids.update(selected_other_dosen_ids)
+
+        dosen_wali_ids_as_x_values = list(selected_dosen_ids)
         if len(set(dosen_wali_ids_as_x_values)) != SSSS_NUM_SHARES_N:
             raise HTTPException(status_code=500, detail="Failed to select a unique set of Dosen Wali for shares.")
         
@@ -1132,6 +1149,7 @@ def request_shamir_split(
             print(f"Unexpected error during ssss_generate_shares for academic_id {academic_id}: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error generating SSS shares: {str(e)}")
 
+        # Requester shares
         my_share_details_for_response = None
         try:
             for x_coordinate_dosen_id, y_coordinate_as_int in shares_generated_tuples:
@@ -1150,9 +1168,27 @@ def request_shamir_split(
             db.rollback() 
             raise HTTPException(status_code=500, detail=f"Database error inserting SSS shares: {str(e)}")
         
+        # Username of other receiving Dosen Wali
+        cursor.execute(
+                "SELECT username FROM users WHERE id IN ({})".format(','.join('?' for _ in dosen_wali_ids_as_x_values)),
+                dosen_wali_ids_as_x_values
+        )
+        dosen_wali_usernames = cursor.fetchall()
+        receiving_dosen_wali_usernames = [row["username"] for row in dosen_wali_usernames]
+
+        # Username of mahasiswa's Dosen Wali
+        cursor.execute(
+                "SELECT username FROM users WHERE id = ?",
+                (creator_id,)
+        )
+        mahasiswa_dosen_wali_username_row = cursor.fetchone()
+        mahasiswa_dosen_wali_username = mahasiswa_dosen_wali_username_row["username"] if mahasiswa_dosen_wali_username_row else None
+
+
         return {
             "message": "Shamir's Secret Sharing split created successfully", 
             "my_share": my_share_details_for_response, 
             "academic_id": academic_id,
-            "shares_distributed_to_dosen_ids": dosen_wali_ids_as_x_values
+            "receiving_dosen_wali_usernames": receiving_dosen_wali_usernames,
+            "mahasiswa_dosen_wali_username": mahasiswa_dosen_wali_username,
         }
