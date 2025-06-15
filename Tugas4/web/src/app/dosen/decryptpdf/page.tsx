@@ -99,9 +99,9 @@ export default function DecryptPDFPage() {
                             </Button>
                             <Button
                                 className="text-black items-center justify-center font-semibold w-full bg-[#23DF79] hover:bg-[#1ebf68] transition"
-                                onClick={() => router.push("/kaprodi")}
+                                onClick={() => router.push("/dosen")}
                             >
-                                Kembali ke Halaman Kaprodi
+                                Kembali ke Halaman Dosen
                             </Button>
                             {error && (
                                 <p className="text-red-400 text-sm text-center">
