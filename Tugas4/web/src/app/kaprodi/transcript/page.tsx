@@ -65,7 +65,7 @@ export default function TranscriptPage() {
     }, []);
 
     const handleDownload = async () => {
-        if (!transkrip || !transkrip.id) return;
+        if (!transkrip) return;
 
         let baseUrl = "http://localhost:8000";
 
