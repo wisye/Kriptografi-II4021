@@ -68,7 +68,7 @@ export default function Create() {
         const payload = {
             nim,
             name,
-            aes_key_hex: hashedKey,
+            aes_key_hex: aesKey,
             courses: coursePayload,
         };
 
