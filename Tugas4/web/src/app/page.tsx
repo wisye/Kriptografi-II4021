@@ -111,7 +111,7 @@ export default function Home() {
                 className="mt-16 text-center"
             >
                 <Image
-                    src="/team.webp" // ganti dengan path foto kamu
+                    src="/team.webp"
                     alt="Foto Pembuat"
                     width={90}
                     height={90}

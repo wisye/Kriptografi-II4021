@@ -62,7 +62,7 @@ export default function TranscriptPage() {
             }
         };
 
-        setTimeout(verifySignature, 100); // lazy loading async
+        setTimeout(verifySignature, 100);
     }, []);
 
     const handleDownload = async () => {
