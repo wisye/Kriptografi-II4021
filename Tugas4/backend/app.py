@@ -852,12 +852,12 @@ def get_academic_pdf(
                 raise HTTPException(status_code=403, detail="You can only view your own academic records")
         
         academic = dict(academic)
-        
-        if current_user["role"] == "Dosen Wali" and academic["created_by_usn"] == current_user["username"] or current_user["role"] == "Mahasiswa" and academic["nim"] == current_user["username"]:
-                academic["aes_key_hex"] = aes_key_hex
-        elif current_user["role"] == "Ketua Program Studi":
-                major = current_user["major"]
-                if major not in KAPRODI_RSA_KEYS:
+
+        if current_user["role"] in ["Dosen Wali", "Ketua Program Studi"]:
+                if isinstance(current_user, sqlite3.Row):
+                        current_user = dict(current_user)
+                major = current_user.get("major")
+                if not major or major not in KAPRODI_RSA_KEYS:
                         raise HTTPException(status_code=400, detail="Invalid major for decryption keys")
                 private_key = KAPRODI_RSA_KEYS[major]["private"]
                 try:
@@ -866,8 +866,11 @@ def get_academic_pdf(
                         academic["aes_key_hex"] = format_aes_key_as_hex_str(decrypted_aes_key)
                 except Exception as e:
                         raise HTTPException(status_code=500, detail=f"Decrypting AES key error: {str(e)}")
-        elif academic["created_by_usn"] != current_user["username"] and current_user["role"] != "Dosen Wali":
+        elif current_user["role"] == "Mahasiswa" and academic["nim"] == current_user["username"]:
+                academic["aes_key_hex"] = aes_key_hex
+        else:
                 raise HTTPException(status_code=403, detail="You do not have permission to view this academic's AES key")
+
         try:
                 decrypted_data = decrypt_aes_cbc(academic["encrypted_data"], academic["aes_key_hex"])
                 decrypted_json = json.loads(decrypted_data)
