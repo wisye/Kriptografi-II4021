@@ -743,19 +743,10 @@ def get_academic_detail_with_sss(
                 "decryption_status": "success" if decrypted_json_content and "error_decrypting" not in decrypted_json_content else "failed"
         }
         
-        if decrypted_json_content and "error_decrypting" not in decrypted_json_content:
-                pdf_buffer = generate_pdf(response_payload)
-                return StreamingResponse(
-                        content=pdf_buffer,
-                        media_type="application/pdf",
-                        headers={
-                        "Content-Disposition": f"attachment; filename=transcript_{academic['nim']}.pdf"
-                        }
-                )
-        else:
-                if decrypted_json_content and "error_decrypting" in decrypted_json_content:
-                        response_payload["decryption_error_detail"] = decrypted_json_content["error_decrypting"]
-                return response_payload
+ 
+        if decrypted_json_content and "error_decrypting" in decrypted_json_content:
+                response_payload["decryption_error_detail"] = decrypted_json_content["error_decrypting"]
+        return response_payload
 
 def generate_pdf(academic_data):
         buffer = BytesIO()

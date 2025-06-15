@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-
+import Link from "next/link";
 export default function Dosen() {
     const router = useRouter();
     const [transkripList, setTranskripList] = useState([]);
@@ -95,6 +95,13 @@ export default function Dosen() {
                 >
                     Key List
                 </Button>
+                <div className="flex justify-center">
+                    <Link href="/dosen/decryptpdf">
+                        <Button className="w-96 text-black font-semibold bg-[#23DF79] hover:bg-[#1ebf68]">
+                            Dekripsi Transkrip (PDF)
+                        </Button>
+                    </Link>
+                </div>
                 <Button
                     className="text-white w-96 font-semibold bg-[#DF2389] hover:bg-[#c31c75] transition"
                     onClick={() => {

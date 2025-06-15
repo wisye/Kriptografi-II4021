@@ -59,17 +59,10 @@ export default function RequestShamir() {
                 );
             }
 
-            const blob = await res.blob();
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = downloadUrl;
-            a.download = `transcript_${academicId}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            console.log("Transkrip berhasil diunduh");
-            console.log("Payload:", payload);
-            console.log("Response:", res);
+            const data = await res.json();
+            localStorage.setItem("transkrip", JSON.stringify(data));
+            alert("Rekonstruksi berhasil! Transkrip ditampilkan.");
+            router.push("/dosen/transcript");
         } catch (err: any) {
             alert(err.message);
         }
@@ -191,7 +184,7 @@ export default function RequestShamir() {
                         onClick={handleSubmit}
                         className="bg-green-500 hover:bg-green-600 text-black font-semibold px-6 py-2"
                     >
-                        Kirim Request dan Unduh Transkrip
+                        Kirim Request dan Lihat Transkrip
                     </Button>
                 </motion.div>
             </motion.div>
