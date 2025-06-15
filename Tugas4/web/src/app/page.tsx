@@ -13,14 +13,17 @@ export default function Home() {
     const [error, setError] = useState("");
     const handleLogin = async () => {
         try {
-            const response = await fetch("http://localhost:8000/login", {
-                method: "POST",
-                credentials: "include",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ username, password }),
-            });
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/login`,
+                {
+                    method: "POST",
+                    credentials: "include",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ username, password }),
+                }
+            );
 
             if (!response.ok) {
                 throw new Error("Login gagal");

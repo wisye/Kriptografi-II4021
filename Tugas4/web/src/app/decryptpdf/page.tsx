@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
+const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function DecryptPDFPage() {
     const [rc4Key, setRc4Key] = useState("");
@@ -24,7 +25,7 @@ export default function DecryptPDFPage() {
         formData.append("rc4_key", rc4Key);
 
         try {
-            const response = await fetch("http://localhost:8000/decrypt-rc4", {
+            const response = await fetch(`${baseUrl}/decrypt-rc4`, {
                 method: "POST",
                 body: formData,
                 credentials: "include",

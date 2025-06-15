@@ -5,13 +5,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
+const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function KeyList() {
     const [keyList, setKeyList] = useState([]);
     const router = useRouter();
 
     useEffect(() => {
-        fetch("http://localhost:8000/shamir/my_splits", {
+        fetch(`${baseUrl}/shamir/my_splits`, {
             credentials: "include",
         })
             .then((res) => res.json())

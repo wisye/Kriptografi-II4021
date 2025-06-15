@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function Kaprodi() {
     const router = useRouter();
@@ -19,7 +20,7 @@ export default function Kaprodi() {
             setUsername(parsed.username);
         }
 
-        fetch("http://localhost:8000/academic/list", {
+        fetch(`${baseUrl}/academic/list`, {
             credentials: "include",
         })
             .then((res) => res.json())
@@ -30,10 +31,9 @@ export default function Kaprodi() {
 
     const handleView = async (academicId: number) => {
         try {
-            const res = await fetch(
-                `http://localhost:8000/academic/${academicId}`,
-                { credentials: "include" }
-            );
+            const res = await fetch(`${baseUrl}/academic/${academicId}`, {
+                credentials: "include",
+            });
             if (!res.ok) throw new Error("Gagal fetch detail transkrip");
 
             const data = await res.json();

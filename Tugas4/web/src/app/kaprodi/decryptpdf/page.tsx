@@ -24,11 +24,14 @@ export default function DecryptPDFPage() {
         formData.append("rc4_key", rc4Key);
 
         try {
-            const response = await fetch("http://localhost:8000/decrypt-rc4", {
-                method: "POST",
-                body: formData,
-                credentials: "include",
-            });
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/decrypt-rc4`,
+                {
+                    method: "POST",
+                    body: formData,
+                    credentials: "include",
+                }
+            );
 
             if (!response.ok) throw new Error("Gagal mendekripsi file");
 

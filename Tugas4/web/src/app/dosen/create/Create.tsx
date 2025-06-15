@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
+const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function Create() {
     const searchParams = useSearchParams();
@@ -73,7 +74,7 @@ export default function Create() {
         };
 
         try {
-            const res = await fetch("http://localhost:8000/academic/input", {
+            const res = await fetch(`${baseUrl}/academic/input`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -87,10 +88,9 @@ export default function Create() {
             if (res.ok) {
                 const academicId = result.academic_id;
 
-                // 🔑 Call Shamir Split
                 try {
                     const shamirRes = await fetch(
-                        `http://localhost:8000/shamir/request_split/${academicId}`,
+                        `${baseUrl}/shamir/request_split/${academicId}`,
                         {
                             method: "POST",
                             credentials: "include",

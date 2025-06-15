@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
+const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function RequestShamir() {
     const searchParams = useSearchParams();
@@ -40,7 +41,7 @@ export default function RequestShamir() {
             };
 
             const res = await fetch(
-                `http://localhost:8000/academic/${academicId}/view-sss`,
+                `${baseUrl}/academic/${academicId}/view-sss`,
                 {
                     method: "POST",
                     headers: {

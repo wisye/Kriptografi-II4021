@@ -14,6 +14,7 @@ export default function Mahasiswa() {
     const [error, setError] = useState("");
     const [username, setUsername] = useState("Mahasiswa");
     const [aesKey, setAesKey] = useState("");
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
     useEffect(() => {
         const storedUser = localStorage.getItem("user");
@@ -22,7 +23,7 @@ export default function Mahasiswa() {
             setUsername(user.username);
         }
 
-        fetch("http://localhost:8000/academic/list", {
+        fetch(`${baseUrl}/academic/list`, {
             credentials: "include",
         })
             .then((res) => res.json())
@@ -38,7 +39,9 @@ export default function Mahasiswa() {
         if (!academicId) return;
         try {
             const response = await fetch(
-                `http://localhost:8000/academic/${academicId}?aes_key_hex=${decryptionKey}`,
+                `${baseUrl}/academic/${academicId}?aes_key_hex=${encodeURIComponent(
+                    decryptionKey
+                )}`,
                 {
                     method: "GET",
                     credentials: "include",

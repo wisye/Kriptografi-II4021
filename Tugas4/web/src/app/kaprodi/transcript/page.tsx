@@ -66,8 +66,8 @@ export default function TranscriptPage() {
 
     const handleDownload = async () => {
         if (!transkrip || !transkrip.id) return;
-
-        let baseUrl = "http://localhost:8000";
+        let baseUrl =
+            process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
         if (encryptPdf && encryptionKey) {
             baseUrl += `/academic/${
