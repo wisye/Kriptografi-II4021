@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 export default function Dosen() {
     const router = useRouter();
     const [transkripList, setTranskripList] = useState([]);
-    const [mabaList, setMabaList] = useState([]); // ✅ STATE UNTUK MABA
+    const [mabaList, setMabaList] = useState([]);
     const [username, setUsername] = useState("");
 
     useEffect(() => {
@@ -28,7 +28,7 @@ export default function Dosen() {
                 if (data.academics) setTranskripList(data.academics);
             });
 
-        // ✅ Fetch Mahasiswa Baru
+        // Fetch Maba List
         fetch("http://localhost:8000/user/list_maba", {
             credentials: "include",
         })
@@ -87,23 +87,52 @@ export default function Dosen() {
             </div>
 
             <div className="flex flex-col gap-4 max-w-3xl mx-auto">
-                {/* ✅ Tampilkan Transkrip */}
-                {transkripList.map((item: any) => (
-                    <Card
-                        key={item.id}
-                        className="bg-white/10 text-white backdrop-blur-sm border border-white/20 ring-1 ring-white/10 cursor-pointer hover:ring-white/30 transition-all"
-                        onClick={() => handleView(item.id)}
+                {transkripList.length > 0 && (
+                    <motion.div
+                        initial="hidden"
+                        animate="visible"
+                        variants={{
+                            visible: {
+                                transition: {
+                                    staggerChildren: 0.15,
+                                },
+                            },
+                        }}
+                        className="flex flex-col gap-4"
                     >
-                        <CardContent className="flex flex-col justify-center items-center space-y-1">
-                            <p className="font-bold text-3xl">{item.name}</p>
-                            <p className="text-white/90 text-xl">
-                                NIM: {item.nim}
-                            </p>
-                        </CardContent>
-                    </Card>
-                ))}
+                        {transkripList.map((item: any, index: number) => (
+                            <motion.div
+                                key={item.id}
+                                variants={{
+                                    hidden: { opacity: 0, y: 20 },
+                                    visible: { opacity: 1, y: 0 },
+                                }}
+                                transition={{
+                                    duration: 0.4,
+                                    ease: "easeOut",
+                                }}
+                            >
+                                <Card className="bg-white/5 text-white backdrop-blur-sm border border-white/10 ring-1 ring-white/5">
+                                    <CardContent className="flex flex-col justify-center items-center space-y-1">
+                                        <p className="font-bold text-xl">
+                                            {item.name}
+                                        </p>
+                                        <p className="text-white/70">
+                                            NIM: {item.nim}
+                                        </p>
+                                        <Button
+                                            onClick={() => handleView(item.id)}
+                                            className="mt-2 text-black font-semibold bg-[#23DF79] hover:bg-[#1ebf68] transition"
+                                        >
+                                            Lihat Transkrip
+                                        </Button>
+                                    </CardContent>
+                                </Card>
+                            </motion.div>
+                        ))}
+                    </motion.div>
+                )}
 
-                {/* ✅ Tampilkan MABA */}
                 {mabaList.length > 0 && (
                     <div className="mt-10">
                         <h2 className="text-2xl font-semibold text-white text-center mb-4">
@@ -141,6 +170,16 @@ export default function Dosen() {
                                             <p className="text-white/70">
                                                 Prodi: {maba.major}
                                             </p>
+                                            <Button
+                                                onClick={() =>
+                                                    router.push(
+                                                        `/dosen/create?nim=${maba.username}`
+                                                    )
+                                                }
+                                                className="mt-2 text-black font-semibold bg-[#23DF79] hover:bg-[#1ebf68] transition"
+                                            >
+                                                Tambah Transkrip
+                                            </Button>
                                         </CardContent>
                                     </Card>
                                 </motion.div>
