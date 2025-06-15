@@ -29,7 +29,8 @@ SSSS_THRESHOLD_K = 3
 SSSS_NUM_SHARES_N = 6
 
 app = FastAPI()
-DATABASE = "database.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE = os.path.join(BASE_DIR, "database.db")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 sessions = {}
 
