@@ -11,6 +11,7 @@ export default function DecryptPDFPage() {
     const [rc4Key, setRc4Key] = useState("");
     const [file, setFile] = useState<File | null>(null);
     const [error, setError] = useState("");
+    const [showKey, setShowKey] = useState(false);
     const router = useRouter();
     const handleDecryptDownload = async () => {
         if (!file || !rc4Key) {
@@ -71,14 +72,25 @@ export default function DecryptPDFPage() {
                                 onChange={(e) =>
                                     setFile(e.target.files?.[0] || null)
                                 }
-                                className="bg-white/10 text-white"
+                                className="bg-white/10 text-white font-normal"
                             />
-                            <Input
-                                placeholder="Masukkan Key..."
-                                value={rc4Key}
-                                onChange={(e) => setRc4Key(e.target.value)}
-                                className="bg-white/10 text-whitet font-normal placeholder:text-white/60"
-                            />
+                            <div className="flex flex-col gap-1 relative">
+                                <Input
+                                    type={showKey ? "text" : "password"}
+                                    placeholder="Masukkan Key..."
+                                    value={rc4Key}
+                                    onChange={(e) => setRc4Key(e.target.value)}
+                                    className="bg-white/10 text-white font-normal placeholder:text-white/60"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowKey(!showKey)}
+                                    className="absolute right-3 top-2 text-white font-normal text-sm hover:underline"
+                                >
+                                    {showKey ? "Hide" : "Show"}
+                                </button>
+                            </div>
+
                             <Button
                                 onClick={handleDecryptDownload}
                                 className="w-full text-white font-semibold bg-[#DF2389] hover:bg-[#c31c75] transition"

@@ -62,7 +62,7 @@ export default function Create() {
         const coursePayload = courseList.map((c, i) => ({
             course_code: c.code,
             course_name: c.name,
-            credits: c.credits, // ✅ kembali ke "credits"
+            credits: c.credits,
             grade: parseFloat(grades[i]),
         }));
 

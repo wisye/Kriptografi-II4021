@@ -120,6 +120,10 @@ export default function Dosen() {
                                         <p className="text-white/70">
                                             NIM: {item.nim}
                                         </p>
+                                        <p className="text-white/60 text-sm italic">
+                                            Dosen Pembimbing:{" "}
+                                            {item.created_by_usn}
+                                        </p>
                                         <Button
                                             onClick={() => handleView(item.id)}
                                             className="mt-2 text-black font-semibold bg-[#23DF79] hover:bg-[#1ebf68] transition"
