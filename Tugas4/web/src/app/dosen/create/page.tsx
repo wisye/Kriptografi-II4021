@@ -5,7 +5,6 @@ import { useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import sha256 from "crypto-js/sha256";
 import { motion } from "framer-motion";
 
 export default function Create() {
@@ -58,8 +57,6 @@ export default function Create() {
             alert("Lengkapi semua data!");
             return;
         }
-
-        const hashedKey = sha256(aesKey).toString();
 
         const coursePayload = courseList.map((c, i) => ({
             course_code: c.code,
